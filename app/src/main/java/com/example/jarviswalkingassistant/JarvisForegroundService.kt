@@ -39,6 +39,20 @@ class JarvisForegroundService : Service(), TextToSpeech.OnInitListener {
         var liveTranscript = "Ambient listening active..."
         var onUpdate: (() -> Unit)? = null
 
+        // Three modes, toggled from either the watch button or the phone UI:
+        // FILES = only your selected document folder, no web tool sent at all.
+        // WEB   = only Anthropic's live web search, no document context.
+        // BOTH  = both sources available to the model in the same call.
+        // Default is FILES — web is opt-in ("if I grant it"), not on by default.
+        @Volatile var searchMode: String = "FILES"
+
+        fun setMode(mode: String) {
+            if (mode in setOf("FILES", "WEB", "BOTH")) {
+                searchMode = mode
+                onUpdate?.invoke()
+            }
+        }
+
         // Condensed Ground Truth so this app cannot repeat the PXN call fabrication
         // incident (assistant stated invented "signed design partners" 4x live).
         // This is a static snapshot, not a substitute for the Notion Ground Truth
@@ -71,6 +85,7 @@ CTO call with Michał Kowalczyk (Invisible Things Lab) is 14 July 13:00 CEST.
         createNotificationChannel()
         tts = TextToSpeech(this, this)
         setupSpeechRecognizer()
+        DocumentStore.restorePersistedFolder(applicationContext)
     }
 
     private fun setupSpeechRecognizer() {
@@ -138,6 +153,9 @@ CTO call with Michał Kowalczyk (Invisible Things Lab) is 14 July 13:00 CEST.
         intent?.getStringExtra("PROMPT")?.let { manualPrompt ->
             processUserPrompt(manualPrompt)
         }
+        intent?.getStringExtra("SET_MODE")?.let { mode ->
+            setMode(mode)
+        }
 
         return START_STICKY
     }
@@ -168,25 +186,35 @@ CTO call with Michał Kowalczyk (Invisible Things Lab) is 14 July 13:00 CEST.
         val apiKey = BuildConfig.CLAUDE_API_KEY
         val url = "https://api.anthropic.com/v1/messages"
         val mediaType = "application/json".toMediaType()
+        val mode = searchMode // FILES / WEB / BOTH, set via watch button or phone UI
 
         return try {
             val rootObj = JSONObject().apply {
                 put("model", "claude-haiku-4-5-20251001")
                 put("max_tokens", 1024)
-                put("system", GROUND_TRUTH_SYSTEM_PROMPT)
+
+                var systemPrompt = GROUND_TRUTH_SYSTEM_PROMPT
+                if (mode == "FILES" || mode == "BOTH") {
+                    val docContext = DocumentStore.retrieveContext(prompt)
+                    if (docContext.isNotBlank()) {
+                        systemPrompt += "\n\nReference documents (from your selected folder):\n$docContext"
+                    }
+                }
+                put("system", systemPrompt)
 
                 // Real server-side tool: Anthropic executes the search and returns
-                // final text directly. The old version declared a fake client-side
-                // tool schema with no code to ever run the search or send a
-                // tool_result back — Claude would call it and get nothing, which is
-                // the exact bug that made answers silently empty or search-less.
-                val toolsArray = JSONArray().apply {
-                    put(JSONObject().apply {
-                        put("type", "web_search_20250305")
-                        put("name", "web_search")
-                    })
+                // final text directly. Only attached when the mode calls for it —
+                // FILES-only mode sends no web tool at all, so a call flagged as
+                // "files only" genuinely cannot reach the internet.
+                if (mode == "WEB" || mode == "BOTH") {
+                    val toolsArray = JSONArray().apply {
+                        put(JSONObject().apply {
+                            put("type", "web_search_20250305")
+                            put("name", "web_search")
+                        })
+                    }
+                    put("tools", toolsArray)
                 }
-                put("tools", toolsArray)
                 
                 put("messages", JSONArray().apply {
                     put(JSONObject().apply {
