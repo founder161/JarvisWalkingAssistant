@@ -38,6 +38,32 @@ class JarvisForegroundService : Service(), TextToSpeech.OnInitListener {
         var latestFullAnswer = "Awaiting input..."
         var liveTranscript = "Ambient listening active..."
         var onUpdate: (() -> Unit)? = null
+
+        // Condensed Ground Truth so this app cannot repeat the PXN call fabrication
+        // incident (assistant stated invented "signed design partners" 4x live).
+        // This is a static snapshot, not a substitute for the Notion Ground Truth
+        // page — regenerate this string from Notion, don't hand-edit it in place.
+        const val GROUND_TRUTH_SYSTEM_PROMPT = """
+You are Jarvis, a private ambient advisor for Dale Williams (sole founder, Leek Venture Studio).
+Hard rules: If you do not know a fact with confidence, say "I don't have that confirmed" —
+never invent names, numbers, or partners. Never state a design partner, investor, or CTO as
+"signed" or "confirmed" unless explicitly told so in this prompt.
+
+AgentGuard Systems Ltd: hardware-enforced AI governance kill-switch, regulated financial services.
+UK patent GB2607435.1 filed 31 Mar 2026, amended claims submitted 16 May 2026. NOT yet granted.
+PCT/EPO deadline 31 Mar 2027 (unrecoverable if missed). No design partners are signed yet —
+Beazley, Twenty7Tec, Monzo are TARGETS only, Q4 2026 fee discussions, not confirmed. SEIS cap
+£250,000 (not £500k). Competitors: Geordie AI ($36.5M raised), EQTY Lab, Credo AI, Holistic AI,
+Arthur AI. Never use terms: DPU, TDX, eBPF, FPGA, GPIO, SSR, BlueField, Gramine — use "hardware
+enforcement processor", "secure execution environment", "wire-speed packet inspection",
+"electronic isolation mechanism", or "physical network severance component" instead.
+
+AI Bluetooth Ltd / Jarvis: passive ambient listening + private document retrieval to Bluetooth
+audio (this app). Patent NOT yet filed — 11 claims drafted only, no priority date.
+
+Dale is sole founder, sole equity across all entities — never suggest equity co-founders.
+CTO call with Michał Kowalczyk (Invisible Things Lab) is 14 July 13:00 CEST.
+"""
     }
 
     override fun onCreate() {
@@ -147,21 +173,17 @@ class JarvisForegroundService : Service(), TextToSpeech.OnInitListener {
             val rootObj = JSONObject().apply {
                 put("model", "claude-haiku-4-5-20251001")
                 put("max_tokens", 1024)
-                
+                put("system", GROUND_TRUTH_SYSTEM_PROMPT)
+
+                // Real server-side tool: Anthropic executes the search and returns
+                // final text directly. The old version declared a fake client-side
+                // tool schema with no code to ever run the search or send a
+                // tool_result back — Claude would call it and get nothing, which is
+                // the exact bug that made answers silently empty or search-less.
                 val toolsArray = JSONArray().apply {
                     put(JSONObject().apply {
+                        put("type", "web_search_20250305")
                         put("name", "web_search")
-                        put("description", "Search the live web for current information")
-                        put("input_schema", JSONObject().apply {
-                            put("type", "object")
-                            put("properties", JSONObject().apply {
-                                put("query", JSONObject().apply {
-                                    put("type", "string")
-                                    put("description", "Search query string")
-                                })
-                            })
-                            put("required", JSONArray().apply { put("query") })
-                        })
                     })
                 }
                 put("tools", toolsArray)
