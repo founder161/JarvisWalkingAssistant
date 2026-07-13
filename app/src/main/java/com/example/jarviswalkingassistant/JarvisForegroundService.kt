@@ -137,7 +137,7 @@ class JarvisForegroundService : Service(), TextToSpeech.OnInitListener {
     }
 
     private fun callClaudeWithWebSearch(prompt: String): String {
-        val apiKey = "sk-ant-YOUR_KEY_HERE"  // Replace with your actual Claude API key
+        val apiKey = System.getenv("CLAUDE_API_KEY") ?: "sk-ant-YOUR_KEY_HERE"
         val url = "https://api.anthropic.com/v1/messages"
         val mediaType = "application/json".toMediaType()
 

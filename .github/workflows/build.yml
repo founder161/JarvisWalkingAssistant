@@ -23,9 +23,13 @@ jobs:
     
     - name: Build phone APK
       run: ./gradlew assembleDebug --project-dir=app
+      env:
+        CLAUDE_API_KEY: ${{ secrets.CLAUDE_API_KEY }}
     
     - name: Build watch APK
       run: ./gradlew assembleDebug --project-dir=wear
+      env:
+        CLAUDE_API_KEY: ${{ secrets.CLAUDE_API_KEY }}
     
     - name: Upload phone APK
       uses: actions/upload-artifact@v3
