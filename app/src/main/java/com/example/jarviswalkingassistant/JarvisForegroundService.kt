@@ -145,7 +145,7 @@ class JarvisForegroundService : Service(), TextToSpeech.OnInitListener {
 
         return try {
             val rootObj = JSONObject().apply {
-                put("model", "claude-3-5-sonnet-20240620")
+                put("model", "claude-haiku-4-5-20251001")
                 put("max_tokens", 1024)
                 
                 val toolsArray = JSONArray().apply {
