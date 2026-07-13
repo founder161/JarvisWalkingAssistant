@@ -182,8 +182,11 @@ class JarvisForegroundService : Service(), TextToSpeech.OnInitListener {
                 .build()
 
             client.newCall(request).execute().use { response ->
-                if (!response.isSuccessful) return "API Error: ${response.code}"
-                val responseBody = response.body?.string() ?: return "Empty response"
+                val responseBody = response.body?.string() ?: return "Empty response (HTTP ${response.code})"
+                
+                if (!response.isSuccessful) {
+                    return "API Error ${response.code}: $responseBody"
+                }
                 
                 val jsonResponse = JSONObject(responseBody)
                 val contentArray = jsonResponse.getJSONArray("content")
@@ -199,7 +202,7 @@ class JarvisForegroundService : Service(), TextToSpeech.OnInitListener {
                 textAnswer.ifEmpty { "No response from Claude" }
             }
         } catch (e: Exception) {
-            "Error: ${e.message}"
+            "Error: ${e.javaClass.simpleName}: ${e.message}"
         }
     }
 
