@@ -11,6 +11,7 @@ import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
 import android.speech.tts.TextToSpeech
 import androidx.core.app.NotificationCompat
+import com.example.jarviswalkingassistant.BuildConfig
 import com.google.android.gms.tasks.Tasks
 import com.google.android.gms.wearable.Wearable
 import kotlinx.coroutines.*
@@ -138,7 +139,7 @@ class JarvisForegroundService : Service(), TextToSpeech.OnInitListener {
     }
 
     private fun callClaudeWithWebSearch(prompt: String): String {
-        val apiKey = System.getenv("CLAUDE_API_KEY") ?: "sk-ant-YOUR_KEY_HERE"
+        val apiKey = BuildConfig.CLAUDE_API_KEY
         val url = "https://api.anthropic.com/v1/messages"
         val mediaType = "application/json".toMediaType()
 
