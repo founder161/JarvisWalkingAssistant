@@ -5,6 +5,7 @@ import android.os.VibrationEffect
 import android.os.Vibrator
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -33,9 +34,10 @@ class WatchActivity : ComponentActivity() {
                 }
             }
 
-            Surface(
-                modifier = Modifier.fillMaxSize(),
-                color = MaterialTheme.colors.background
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(MaterialTheme.colors.background)
             ) {
                 Column(
                     modifier = Modifier
