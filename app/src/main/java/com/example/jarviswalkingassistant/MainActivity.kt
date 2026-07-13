@@ -54,7 +54,7 @@ class MainActivity : ComponentActivity() {
                         modifier = Modifier.padding(bottom = 8.dp)
                     )
                     
-                    HorizontalDivider()
+                    Divider()
                     
                     Text(
                         text = "Live Transcript:",
