@@ -8,49 +8,46 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-    
+
     steps:
     - uses: actions/checkout@v4
-    
+
     - name: Set up JDK 17
       uses: actions/setup-java@v4
       with:
         java-version: '17'
         distribution: 'temurin'
-    
-    - name: Install Android SDK
-      run: |
-        export ANDROID_HOME=$HOME/android-sdk
-        mkdir -p $ANDROID_HOME
-        cd $ANDROID_HOME
-        
-        # Download SDK command-line tools
-        wget -q https://dl.google.com/android/repository/commandlinetools-linux-10406996_latest.zip
-        unzip -q commandlinetools-linux-10406996_latest.zip
-        
-        # Accept licenses
-        yes | $ANDROID_HOME/cmdline-tools/bin/sdkmanager --sdk_root=$ANDROID_HOME --licenses 2>/dev/null || true
-        
-        # Install required SDK packages
-        $ANDROID_HOME/cmdline-tools/bin/sdkmanager --sdk_root=$ANDROID_HOME "platforms;android-34" "build-tools;34.0.0" "platform-tools" 2>/dev/null || true
-        
-        echo "ANDROID_HOME=$ANDROID_HOME" >> $GITHUB_ENV
-        echo "$ANDROID_HOME/cmdline-tools/bin:$ANDROID_HOME/platform-tools:$ANDROID_HOME/emulator" >> $GITHUB_PATH
-    
-    - name: Build APKs
-      uses: gradle/gradle-build-action@v3
+
+    - name: Setup Android SDK
+      uses: android-actions/setup-android@v3
+
+    - name: Install Gradle 8.10
+      uses: gradle/actions/setup-gradle@v3
       with:
-        gradle-version: 8.10
-        arguments: assembleDebug
+        gradle-version: '8.10'
+
+    - name: Generate Gradle wrapper
+      run: gradle wrapper --gradle-version 8.10
+
+    - name: Make gradlew executable
+      run: chmod +x ./gradlew
+
+    - name: Build phone APK
+      run: ./gradlew :app:assembleDebug
       env:
         CLAUDE_API_KEY: ${{ secrets.CLAUDE_API_KEY }}
-    
+
+    - name: Build watch APK
+      run: ./gradlew :wear:assembleDebug
+      env:
+        CLAUDE_API_KEY: ${{ secrets.CLAUDE_API_KEY }}
+
     - name: Upload phone APK
       uses: actions/upload-artifact@v4
       with:
         name: Phone-Jarvis-Assistant
         path: app/build/outputs/apk/debug/app-debug.apk
-    
+
     - name: Upload watch APK
       uses: actions/upload-artifact@v4
       with:
