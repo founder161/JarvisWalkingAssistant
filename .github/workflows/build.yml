@@ -18,16 +18,16 @@ jobs:
         java-version: '17'
         distribution: 'temurin'
     
-    - name: Make gradlew executable
-      run: chmod +x gradlew
+    - name: Setup Gradle
+      uses: gradle/gradle-build-action@v2
     
     - name: Build phone APK
-      run: ./gradlew assembleDebug --project-dir=app
+      run: gradle -p app assembleDebug
       env:
         CLAUDE_API_KEY: ${{ secrets.CLAUDE_API_KEY }}
     
     - name: Build watch APK
-      run: ./gradlew assembleDebug --project-dir=wear
+      run: gradle -p wear assembleDebug
       env:
         CLAUDE_API_KEY: ${{ secrets.CLAUDE_API_KEY }}
     
