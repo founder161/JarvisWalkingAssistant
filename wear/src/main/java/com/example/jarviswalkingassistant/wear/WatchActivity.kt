@@ -29,7 +29,7 @@ class WatchActivity : ComponentActivity() {
 
         setContent {
             var responseText by remember { mutableStateOf("Awaiting response...") }
-            var currentMode by remember { mutableStateOf("FILES") }
+            var currentMode by remember { mutableStateOf("BOTH") }
 
             LaunchedEffect(Unit) {
                 MessageListenerService.onMessageReceived = { msg ->

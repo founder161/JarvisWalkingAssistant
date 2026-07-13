@@ -1,7 +1,6 @@
 package com.example.jarviswalkingassistant
 
 import android.app.*
-import android.content.Context
 import android.content.Intent
 import android.os.Build
 import android.os.Bundle
@@ -10,8 +9,8 @@ import android.speech.RecognitionListener
 import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
 import android.speech.tts.TextToSpeech
+import android.speech.tts.UtteranceProgressListener
 import androidx.core.app.NotificationCompat
-import com.example.jarviswalkingassistant.BuildConfig
 import com.google.android.gms.tasks.Tasks
 import com.google.android.gms.wearable.Wearable
 import kotlinx.coroutines.*
@@ -21,16 +20,18 @@ import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONArray
 import org.json.JSONObject
 import java.util.*
-import kotlin.math.log10
 
 class JarvisForegroundService : Service(), TextToSpeech.OnInitListener {
 
     private val serviceJob = SupervisorJob()
     private val serviceScope = CoroutineScope(Dispatchers.Main + serviceJob)
-    
+
     private var tts: TextToSpeech? = null
     private var speechRecognizer: SpeechRecognizer? = null
+    private var recognizerIntent: Intent? = null
     private val client = OkHttpClient()
+
+    @Volatile private var isSpeaking = false
 
     companion object {
         const val CHANNEL_ID = "JarvisServiceChannel"
@@ -39,12 +40,21 @@ class JarvisForegroundService : Service(), TextToSpeech.OnInitListener {
         var liveTranscript = "Ambient listening active..."
         var onUpdate: (() -> Unit)? = null
 
-        // Three modes, toggled from either the watch button or the phone UI:
-        // FILES = only your selected document folder, no web tool sent at all.
-        // WEB   = only Anthropic's live web search, no document context.
-        // BOTH  = both sources available to the model in the same call.
-        // Default is FILES — web is opt-in ("if I grant it"), not on by default.
-        @Volatile var searchMode: String = "FILES"
+        // Scrolling history, most-recent-first, instead of overwriting the last
+        // answer — same idea as live_transcribe.py on the laptop. Synchronized
+        // since it's written from a background thread and read from the UI.
+        val qaHistory: MutableList<Pair<String, String>> =
+            Collections.synchronizedList(mutableListOf<Pair<String, String>>())
+
+        // Full access by default now — web + whatever files you've added, both on.
+        // FILES/WEB restrict it; you have to deliberately dial it down, not up.
+        @Volatile var searchMode: String = "BOTH"
+
+        // The Start/Stop control. "Physical button" here means an always-visible
+        // on-screen toggle (like the laptop's spacebar mute was software-detected
+        // too) — happy to wire it to a hardware key (e.g. volume button) next if
+        // you want a literal physical press instead of on-screen.
+        @Volatile var isListeningEnabled = true
 
         fun setMode(mode: String) {
             if (mode in setOf("FILES", "WEB", "BOTH")) {
@@ -53,30 +63,27 @@ class JarvisForegroundService : Service(), TextToSpeech.OnInitListener {
             }
         }
 
-        // Condensed Ground Truth so this app cannot repeat the PXN call fabrication
-        // incident (assistant stated invented "signed design partners" 4x live).
-        // This is a static snapshot, not a substitute for the Notion Ground Truth
-        // page — regenerate this string from Notion, don't hand-edit it in place.
-        const val GROUND_TRUTH_SYSTEM_PROMPT = """
-You are Jarvis, a private ambient advisor for Dale Williams (sole founder, Leek Venture Studio).
-Hard rules: If you do not know a fact with confidence, say "I don't have that confirmed" —
-never invent names, numbers, or partners. Never state a design partner, investor, or CTO as
-"signed" or "confirmed" unless explicitly told so in this prompt.
+        fun toggleListening(): Boolean {
+            isListeningEnabled = !isListeningEnabled
+            onUpdate?.invoke()
+            return isListeningEnabled
+        }
 
-AgentGuard Systems Ltd: hardware-enforced AI governance kill-switch, regulated financial services.
-UK patent GB2607435.1 filed 31 Mar 2026, amended claims submitted 16 May 2026. NOT yet granted.
-PCT/EPO deadline 31 Mar 2027 (unrecoverable if missed). No design partners are signed yet —
-Beazley, Twenty7Tec, Monzo are TARGETS only, Q4 2026 fee discussions, not confirmed. SEIS cap
-£250,000 (not £500k). Competitors: Geordie AI ($36.5M raised), EQTY Lab, Credo AI, Holistic AI,
-Arthur AI. Never use terms: DPU, TDX, eBPF, FPGA, GPIO, SSR, BlueField, Gramine — use "hardware
-enforcement processor", "secure execution environment", "wire-speed packet inspection",
-"electronic isolation mechanism", or "physical network severance component" instead.
-
-AI Bluetooth Ltd / Jarvis: passive ambient listening + private document retrieval to Bluetooth
-audio (this app). Patent NOT yet filed — 11 claims drafted only, no priority date.
-
-Dale is sole founder, sole equity across all entities — never suggest equity co-founders.
-CTO call with Michał Kowalczyk (Invisible Things Lab) is 14 July 13:00 CEST.
+        // General-purpose by default. No company facts hardcoded here anymore —
+        // if you want AgentGuard-specific grounding, add those files yourself via
+        // the document picker. This prompt only guards against inventing specific
+        // facts, it does not narrow what topics are allowed.
+        const val BASE_SYSTEM_PROMPT = """
+You are Jarvis, Dale's private ambient voice advisor. Answer any question on any
+topic exactly as you normally would — general knowledge, current events, weather,
+anything — using your full capabilities including live web search when available.
+You are NOT limited to any single company or business topic; do not assume the
+conversation is about any specific company unless the user's question or the
+reference documents below actually indicate that. If "Reference documents" are
+included below, treat them as supplementary context for this conversation only.
+If you're not confident about a specific fact (a name, a number, a status), say
+"I don't have that confirmed" rather than inventing one — especially for anything
+business or investor-related.
 """
     }
 
@@ -85,7 +92,7 @@ CTO call with Michał Kowalczyk (Invisible Things Lab) is 14 July 13:00 CEST.
         createNotificationChannel()
         tts = TextToSpeech(this, this)
         setupSpeechRecognizer()
-        DocumentStore.restorePersistedFolder(applicationContext)
+        DocumentStore.restorePersisted(applicationContext)
     }
 
     private fun setupSpeechRecognizer() {
@@ -95,7 +102,7 @@ CTO call with Michał Kowalczyk (Invisible Things Lab) is 14 July 13:00 CEST.
         }
 
         speechRecognizer = SpeechRecognizer.createSpeechRecognizer(this)
-        val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+        recognizerIntent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
             putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
             putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
         }
@@ -106,7 +113,7 @@ CTO call with Michał Kowalczyk (Invisible Things Lab) is 14 July 13:00 CEST.
                 if (!matches.isNullOrEmpty()) {
                     processUserPrompt(matches[0])
                 }
-                speechRecognizer?.startListening(intent)
+                restartListeningIfAllowed()
             }
 
             override fun onPartialResults(partialResults: Bundle?) {
@@ -118,13 +125,13 @@ CTO call with Michał Kowalczyk (Invisible Things Lab) is 14 July 13:00 CEST.
             }
 
             override fun onEndOfSpeech() {
-                speechRecognizer?.startListening(intent)
+                restartListeningIfAllowed()
             }
 
             override fun onError(error: Int) {
-                liveTranscript = "Recognition error: $error"
-                onUpdate?.invoke()
-                speechRecognizer?.startListening(intent)
+                // Timeouts/no-match fire constantly during ordinary silence — that's
+                // normal, not a fault. Small delay avoids a tight restart loop.
+                restartListeningIfAllowed(delayMs = 300)
             }
 
             override fun onReadyForSpeech(params: Bundle?) {}
@@ -134,27 +141,60 @@ CTO call with Michał Kowalczyk (Invisible Things Lab) is 14 July 13:00 CEST.
             override fun onEvent(eventType: Int, params: Bundle?) {}
         })
 
-        speechRecognizer?.startListening(intent)
+        // THE FIX for "keeps interrupting itself": the mic used to stay open while
+        // TTS was talking, so it heard its own answer and treated it as a new
+        // question — which fired TTS again mid-sentence, forever. Now it stops
+        // listening the instant speech starts and only resumes once done.
+        tts?.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
+            override fun onStart(utteranceId: String?) {
+                isSpeaking = true
+                speechRecognizer?.stopListening()
+            }
+            override fun onDone(utteranceId: String?) {
+                isSpeaking = false
+                restartListeningIfAllowed()
+            }
+            @Deprecated("Deprecated in Java")
+            override fun onError(utteranceId: String?) {
+                isSpeaking = false
+                restartListeningIfAllowed()
+            }
+        })
+
+        restartListeningIfAllowed()
+    }
+
+    private fun restartListeningIfAllowed(delayMs: Long = 0) {
+        serviceScope.launch(Dispatchers.Main) {
+            if (delayMs > 0) delay(delayMs)
+            if (isListeningEnabled && !isSpeaking) {
+                recognizerIntent?.let { speechRecognizer?.startListening(it) }
+            }
+        }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         val notification = NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle("Jarvis Active")
-            .setContentText("Listening ambiently...")
+            .setContentText(if (isListeningEnabled) "Listening ambiently..." else "Paused")
             .setSmallIcon(android.R.drawable.ic_btn_speak_now)
             .build()
-            
+
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             startForeground(NOTIFICATION_ID, notification, android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE)
         } else {
             startForeground(NOTIFICATION_ID, notification)
         }
-        
+
         intent?.getStringExtra("PROMPT")?.let { manualPrompt ->
             processUserPrompt(manualPrompt)
         }
         intent?.getStringExtra("SET_MODE")?.let { mode ->
             setMode(mode)
+        }
+        if (intent?.getBooleanExtra("TOGGLE_LISTENING", false) == true) {
+            val nowOn = toggleListening()
+            if (nowOn) restartListeningIfAllowed() else speechRecognizer?.stopListening()
         }
 
         return START_STICKY
@@ -172,40 +212,41 @@ CTO call with Michał Kowalczyk (Invisible Things Lab) is 14 July 13:00 CEST.
         onUpdate?.invoke()
 
         serviceScope.launch(Dispatchers.IO) {
-            val response = callClaudeWithWebSearch(prompt)
+            val response = callClaude(prompt)
             latestFullAnswer = response
+            qaHistory.add(0, prompt to response)
+            if (qaHistory.size > 20) qaHistory.removeAt(qaHistory.size - 1)
             withContext(Dispatchers.Main) { onUpdate?.invoke() }
 
             val spokenSummary = extractSummary(response)
-            tts?.speak(spokenSummary, TextToSpeech.QUEUE_FLUSH, null, "JarvisTTS")
+            tts?.speak(spokenSummary, TextToSpeech.QUEUE_FLUSH, null, "JarvisTTS-${System.currentTimeMillis()}")
             sendToWatch(spokenSummary)
         }
     }
 
-    private fun callClaudeWithWebSearch(prompt: String): String {
+    private fun callClaude(prompt: String): String {
         val apiKey = BuildConfig.CLAUDE_API_KEY
         val url = "https://api.anthropic.com/v1/messages"
         val mediaType = "application/json".toMediaType()
-        val mode = searchMode // FILES / WEB / BOTH, set via watch button or phone UI
+        val mode = searchMode
 
         return try {
             val rootObj = JSONObject().apply {
                 put("model", "claude-haiku-4-5-20251001")
-                put("max_tokens", 1024)
+                // Was 1024 — real cause of "partial" answers. A web-search round
+                // trip eats into that budget before the model even starts writing
+                // the final answer, so it hit the cap mid-sentence.
+                put("max_tokens", 4096)
 
-                var systemPrompt = GROUND_TRUTH_SYSTEM_PROMPT
+                var systemPrompt = BASE_SYSTEM_PROMPT
                 if (mode == "FILES" || mode == "BOTH") {
                     val docContext = DocumentStore.retrieveContext(prompt)
                     if (docContext.isNotBlank()) {
-                        systemPrompt += "\n\nReference documents (from your selected folder):\n$docContext"
+                        systemPrompt += "\n\nReference documents (only what you've explicitly added):\n$docContext"
                     }
                 }
                 put("system", systemPrompt)
 
-                // Real server-side tool: Anthropic executes the search and returns
-                // final text directly. Only attached when the mode calls for it —
-                // FILES-only mode sends no web tool at all, so a call flagged as
-                // "files only" genuinely cannot reach the internet.
                 if (mode == "WEB" || mode == "BOTH") {
                     val toolsArray = JSONArray().apply {
                         put(JSONObject().apply {
@@ -215,7 +256,7 @@ CTO call with Michał Kowalczyk (Invisible Things Lab) is 14 July 13:00 CEST.
                     }
                     put("tools", toolsArray)
                 }
-                
+
                 put("messages", JSONArray().apply {
                     put(JSONObject().apply {
                         put("role", "user")
@@ -233,20 +274,24 @@ CTO call with Michał Kowalczyk (Invisible Things Lab) is 14 July 13:00 CEST.
 
             client.newCall(request).execute().use { response ->
                 val responseBody = response.body?.string() ?: return "Empty response (HTTP ${response.code})"
-                
+
                 if (!response.isSuccessful) {
                     return "API Error ${response.code}: $responseBody"
                 }
-                
+
                 val jsonResponse = JSONObject(responseBody)
                 val contentArray = jsonResponse.getJSONArray("content")
-                
+
                 var textAnswer = ""
                 for (i in 0 until contentArray.length()) {
                     val item = contentArray.getJSONObject(i)
                     if (item.getString("type") == "text") {
                         textAnswer += item.getString("text")
                     }
+                }
+
+                if (jsonResponse.optString("stop_reason", "") == "max_tokens") {
+                    textAnswer += "\n\n[Cut off at max length — ask me to continue]"
                 }
 
                 textAnswer.ifEmpty { "No response from Claude" }
