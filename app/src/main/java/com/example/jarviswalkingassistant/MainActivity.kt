@@ -1,4 +1,5 @@
-●—○—📁📄package com.example.jarviswalkingassistant
+package com.example.jarviswalkingassistant
+
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
@@ -15,7 +16,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.core.app.ActivityCompat
+
 class MainActivity : ComponentActivity() {
+
         private val folderPickerLauncher =
         registerForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri: Uri? ->
                 uri?.let {
@@ -23,13 +26,16 @@ class MainActivity : ComponentActivity() {
                         JarvisForegroundService.onUpdate?.invoke()
                 }
         }
+
         private val filesPickerLauncher =
         registerForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris: List<Uri> ->
                 uris.forEach { DocumentStore.addFile(applicationContext, it) }
                 JarvisForegroundService.onUpdate?.invoke()
         }
+
         override fun onCreate(savedInstanceState: Bundle?) {
                 super.onCreate(savedInstanceState)
+
                 val permissionsNeeded = mutableListOf(android.Manifest.permission.RECORD_AUDIO)
                 if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
                         permissionsNeeded.add(android.Manifest.permission.BLUETOOTH_CONNECT)
@@ -39,30 +45,38 @@ class MainActivity : ComponentActivity() {
                         permissionsNeeded.toTypedArray(),
                         100
                         )
+
                 val serviceIntent = Intent(this, JarvisForegroundService::class.java)
                 startService(serviceIntent)
+
                 setContent {
                         var liveTranscript by remember { mutableStateOf(JarvisForegroundService.liveTranscript) }
                         var mode by remember { mutableStateOf(JarvisForegroundService.searchMode) }
                         var listening by remember { mutableStateOf(JarvisForegroundService.isListeningEnabled) }
+                        var micSource by remember { mutableStateOf(JarvisForegroundService.preferredMicSource) }
                         var sourcesVersion by remember { mutableStateOf(0) }
                         var historyVersion by remember { mutableStateOf(0) }
+
                         LaunchedEffect(Unit) {
                                 JarvisForegroundService.onUpdate = {
                                         liveTranscript = JarvisForegroundService.liveTranscript
                                         mode = JarvisForegroundService.searchMode
                                         listening = JarvisForegroundService.isListeningEnabled
+                                        micSource = JarvisForegroundService.preferredMicSource
                                         sourcesVersion++
                                         historyVersion++
                                 }
                         }
+
                         Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
                                 Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
+
                                         Text(
                                                 text = "Jarvis Walking Assistant",
                                                 style = MaterialTheme.typography.headlineMedium,
                                                 modifier = Modifier.padding(bottom = 8.dp)
                                                 )
+
                                         Button(
                                                 onClick = {
                                                         val intent = Intent(this@MainActivity, JarvisForegroundService::class.java).apply {
@@ -78,6 +92,26 @@ class MainActivity : ComponentActivity() {
                                                 ) {
                                                 Text(if (listening) "● LISTENING — tap to stop" else "○ STOPPED — tap to start")
                                         }
+
+                                        Spacer(modifier = Modifier.height(8.dp))
+
+                                        Text("Microphone", style = MaterialTheme.typography.titleMedium)
+                                        Row(modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)) {
+                                                listOf("AUTO" to "Auto", "PHONE" to "Phone", "BLUETOOTH" to "Bluetooth").forEach { (value, label) ->
+                                                        Button(
+                                                                onClick = {
+                                                                        val intent = Intent(this@MainActivity, JarvisForegroundService::class.java).apply {
+                                                                                putExtra("SET_MIC_SOURCE", value)
+                                                                        }
+                                                                        startService(intent)
+                                                                        micSource = value
+                                                                },
+                                                                modifier = Modifier.weight(1f).padding(end = if (value != "BLUETOOTH") 4.dp else 0.dp),
+                                                                colors = if (micSource == value) ButtonDefaults.buttonColors() else ButtonDefaults.outlinedButtonColors()
+                                                                ) { Text(label, style = MaterialTheme.typography.labelMedium) }
+                                                }
+                                        }
+
                                         Divider(modifier = Modifier.padding(vertical = 8.dp))
                                         Text("Mode: $mode", style = MaterialTheme.typography.titleMedium)
                                         Row(modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)) {
@@ -95,6 +129,7 @@ class MainActivity : ComponentActivity() {
                                                                 ) { Text(option, style = MaterialTheme.typography.labelMedium) }
                                                 }
                                         }
+
                                         Text("Documents (${DocumentStore.summaryLabel()})", style = MaterialTheme.typography.titleMedium)
                                         Row(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
                                                 Button(
@@ -125,11 +160,15 @@ class MainActivity : ComponentActivity() {
                                                         }
                                                 }
                                         }
+
                                         Divider(modifier = Modifier.padding(vertical = 8.dp))
+
                                         Text("Live Transcript:", style = MaterialTheme.typography.titleMedium)
                                         Text(liveTranscript, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary)
+
                                         Spacer(modifier = Modifier.height(8.dp))
                                         Text("History (most recent first):", style = MaterialTheme.typography.titleMedium)
+
                                         @Suppress("UNUSED_EXPRESSION") historyVersion
                                         Column(
                                                 modifier = Modifier.weight(1f).verticalScroll(rememberScrollState())
@@ -143,6 +182,7 @@ class MainActivity : ComponentActivity() {
                                                         Divider(modifier = Modifier.padding(bottom = 8.dp))
                                                 }
                                         }
+
                                         var textInput by remember { mutableStateOf("") }
                                         OutlinedTextField(
                                                 value = textInput,
