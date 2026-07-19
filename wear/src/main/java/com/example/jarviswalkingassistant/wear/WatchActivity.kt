@@ -30,6 +30,7 @@ class WatchActivity : ComponentActivity() {
         setContent {
             var responseText by remember { mutableStateOf("Awaiting response...") }
             var currentMode by remember { mutableStateOf("BOTH") }
+            var listening by remember { mutableStateOf(true) }
 
             LaunchedEffect(Unit) {
                 MessageListenerService.onMessageReceived = { msg ->
@@ -40,26 +41,37 @@ class WatchActivity : ComponentActivity() {
 
             Box(
                 modifier = Modifier
-                    .fillMaxSize()
-                    .background(MaterialTheme.colors.background)
-            ) {
+                .fillMaxSize()
+                .background(MaterialTheme.colors.background)
+                ) {
                 Column(
                     modifier = Modifier
-                        .fillMaxSize()
-                        .padding(8.dp)
-                        .verticalScroll(rememberScrollState())
-                ) {
+                    .fillMaxSize()
+                    .padding(8.dp)
+                    .verticalScroll(rememberScrollState())
+                    ) {
                     Text(
                         text = "Jarvis",
                         modifier = Modifier.fillMaxWidth(),
                         textAlign = TextAlign.Center,
                         style = MaterialTheme.typography.title3
-                    )
+                        )
 
                     Spacer(modifier = Modifier.height(6.dp))
 
-                    // Single button, cycles FILES -> WEB -> BOTH -> FILES, same
-                    // pattern as the spacebar mute toggle on the laptop version.
+                    Button(
+                        onClick = {
+                            listening = !listening
+                            vibrate()
+                            sendToggleListeningToPhone()
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                        ) {
+                        Text(if (listening) "🎙 Listening — tap to pause" else "⏸ Paused — tap to resume")
+                    }
+
+                    Spacer(modifier = Modifier.height(6.dp))
+
                     Button(
                         onClick = {
                             val nextIndex = (modes.indexOf(currentMode) + 1) % modes.size
@@ -68,7 +80,7 @@ class WatchActivity : ComponentActivity() {
                             sendModeToPhone(currentMode)
                         },
                         modifier = Modifier.fillMaxWidth()
-                    ) {
+                        ) {
                         Text("Mode: $currentMode")
                     }
 
@@ -77,8 +89,23 @@ class WatchActivity : ComponentActivity() {
                         text = responseText,
                         style = MaterialTheme.typography.body2,
                         textAlign = TextAlign.Center
-                    )
+                        )
                 }
+            }
+        }
+    }
+
+    private fun sendToggleListeningToPhone() {
+        scope.launch {
+            try {
+                val nodeClient = Wearable.getNodeClient(applicationContext)
+                val messageClient = Wearable.getMessageClient(applicationContext)
+                val nodes = com.google.android.gms.tasks.Tasks.await(nodeClient.connectedNodes)
+                for (node in nodes) {
+                    messageClient.sendMessage(node.id, "/jarvis/toggle_listening", ByteArray(0))
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
             }
         }
     }
