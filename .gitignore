@@ -10,3 +10,11 @@
 local.properties
 *.log
 .envrc
+signing.properties
+local.properties
+*.jks
+secrets/
+keys/
+signing.properties
+app/build/
+wear/build/

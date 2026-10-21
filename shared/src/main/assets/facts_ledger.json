@@ -1,0 +1,102 @@
+{
+  "version": "2026-10-20",
+  "note": "Single source of truth for what Jarvis may say about Dale's ventures. Shared by Jarvis Nova (laptop) and the phone app. Built from Notion Ground Truth (verified 12 Oct 2026), the 90-Day Win Plan (19 Oct 2026) and confirmed patent filings. Edit here only; both apps reload it.",
+  "ventures": {
+    "AGENTGUARD": {
+      "label": "AgentGuard",
+      "aliases": ["agentguard", "agent guard", "agentguard systems"],
+      "facts": [
+        {"id": "ag-what", "text": "AgentGuard is an independent hardware control layer that physically contains autonomous AI agents in regulated financial services when they breach defined risk rules, with a separate unit verifying the isolation and signing a tamper-evident record.", "tags": ["what", "product", "pitch"]},
+        {"id": "ag-market", "text": "First market: regulated financial services — Tier 1 and Tier 2 banks and Lloyd's insurance syndicates.", "tags": ["market", "customers"]},
+        {"id": "ag-patent-core", "text": "Core UK patent application GB2607435.1, filed 31 March 2026; amended claims submitted 16 May 2026. Status: application filed, amended claims submitted — not granted.", "tags": ["patent", "ip"]},
+        {"id": "ag-patent-family", "text": "Four further UK patent applications filed autumn 2026: GB2622768.6, GB2623316.3, GB2623318.9 and GB2623319.7 — five AgentGuard applications in total, all pending.", "tags": ["patent", "ip"]},
+        {"id": "ag-pct", "text": "International (PCT) deadline for the core application is 31 March 2027.", "tags": ["patent", "deadline"]},
+        {"id": "ag-fca", "text": "Accepted onto the FCA AI Lab Supercharged Academy on 30 June 2026.", "tags": ["fca", "validation", "traction"]},
+        {"id": "ag-fi", "text": "Accepted into Founder Institute London, Fall 2026 cohort (13 October 2026).", "tags": ["accelerator", "traction"]},
+        {"id": "ag-raise", "text": "Total raise £1.75M: a £250,000 SEIS-qualifying tranche (SEIS planned, subject to HMRC advance assurance) plus a £1.5M seed extension.", "tags": ["raise", "funding", "ask", "seis"]},
+        {"id": "ag-t1-build", "text": "Tranche 1 (£250,000) use of funds: product build £126,300; founder salary £60,000 over 18 months; employer NI £7,875; Head of Sales £33,938; patents including PCT £12,650; legal and set-up £4,154; insurance and accountancy £2,800; outreach tools £1,800; contingency £483.", "tags": ["use of funds", "budget", "tranche"]},
+        {"id": "ag-seed", "text": "Seed extension £1,500,000: engineering team £700,000; production hardware and test lab £120,000; security testing £90,000; sales team £280,000; KTP £33,660; patents £80,000; marketing and partnerships £60,000; founder salary and operations £120,000; contingency £16,340.", "tags": ["use of funds", "seed"]},
+        {"id": "ag-forecast", "text": "36-month base forecast (tranche 1 only): revenue £40,000 in year 1, £160,000 in year 2, £450,000 in year 3; profitable every month from month 19; lowest cash £33,640 in month 18; closing cash £261,621 at month 36.", "tags": ["forecast", "revenue", "financials"]},
+        {"id": "ag-sales", "text": "Dedicated sales staff: Head of Sales from month 7, then an Enterprise Account Executive and a Technical Sales Engineer at seed. Dale is the inventor, not the salesperson.", "tags": ["team", "sales"]},
+        {"id": "ag-team", "text": "Founder Dale Williams, 25+ years of operations leadership; actively recruiting a hardware-security co-founder.", "tags": ["team", "founder", "cto"]},
+        {"id": "ag-poc", "text": "Proof-of-concept engagements start from £45,000.", "tags": ["pricing", "poc"]},
+        {"id": "ag-design-partners", "text": "Design-partner conversations are targets, not signed: the plan is three paid design partners in the first year.", "tags": ["customers", "design partners", "traction"]},
+        {"id": "ag-competitor", "text": "Main named competitor: Geordie AI (about $36.5M raised). Positioning: AgentGuard is the physical enforcement layer underneath software governance tools.", "tags": ["competition"]},
+        {"id": "ag-regs", "text": "Regulatory drivers today: SM&CR, DORA Article 30 and EU AI Act Article 14 (high-risk obligations from 2 December 2027; fines up to €15m or 3% of turnover).", "tags": ["regulation", "why now"]},
+        {"id": "ag-aisi", "text": "UK AISI (July 2026) reported all five frontier models tested took out-of-scope shortcuts and one attempted to reach outside its sandbox; containment held at the infrastructure layer.", "tags": ["why now", "evidence"]},
+        {"id": "ag-exit", "text": "Target acquirers: IBM Security, Thales Group, BAE Systems Applied Intelligence.", "tags": ["exit", "acquirers"]}
+      ],
+      "banned": [
+        {"pattern": "\\bsigned (?:design )?partners?\\b|\\bdesign partners? (?:are |have )?(?:signed|committed|on board)\\b|\\bsigned (?:with|up) (?:beazley|monzo|twenty7tec)\\b", "reason": "No design partners are signed.", "say_instead": "Design-partner conversations are targets, not signed."},
+        {"pattern": "\\b(?:beazley|monzo|twenty7tec)\\b.{0,40}\\b(?:customer|client|partner|signed|committed)", "reason": "Named firms are outreach targets only.", "say_instead": "Those are target design partners, not signed."},
+        {"pattern": "\\b(?:is |are |been |fully )?patented\\b|\\bpatent (?:is |has been )?granted\\b|\\bgranted patent\\b", "reason": "Applications are pending, not granted.", "say_instead": "Patent applications filed and pending."},
+        {"pattern": "\\bFCA (?:regulatory )?sandbox\\b(?!.{0,30}rejected)", "reason": "Sandbox application was rejected; the live relationship is the AI Lab Supercharged Academy.", "say_instead": "Accepted onto the FCA AI Lab Supercharged Academy."},
+        {"pattern": "\\bFCA[- ](?:approved|authorised|authorized|endorsed|certified)\\b", "reason": "No FCA approval exists.", "say_instead": "Accepted onto the FCA AI Lab Supercharged Academy."},
+        {"pattern": "\\b(?:working|live|built|functioning) prototype\\b|\\bprototype (?:is )?(?:built|working|live)\\b", "reason": "No AgentGuard prototype exists yet.", "say_instead": "Demonstrator is the first build milestone."},
+        {"pattern": "\\b(?:paying|existing|current) customers?\\b|\\bwe (?:have|already have) customers\\b|\\bour revenue\\b|\\bgenerating revenue\\b", "reason": "No customers or revenue yet.", "say_instead": "Revenue is forecast from year one."},
+        {"pattern": "\\bworld'?s first\\b|\\bfirst ever\\b", "reason": "No superlatives.", "say_instead": "Built for a gap software tools can't close."},
+        {"pattern": "\\bfreedom[- ]to[- ]operate (?:opinion|report)\\b|\\bkilburn\\s*&?\\s*strode\\b", "reason": "No FTO opinion has been commissioned.", "say_instead": "Freedom-to-operate review is planned."},
+        {"pattern": "\\bazure\\b.{0,30}\\b(?:covering|hosting|credits)\\b", "reason": "Azure credits are not active.", "say_instead": "Cloud credits are with Google Cloud."},
+        {"pattern": "\\b(?:two|2) CTOs?\\b|\\bCTO (?:is )?(?:secured|hired|on board|signed)\\b|\\bco-?founder (?:is )?(?:secured|signed|on board)\\b", "reason": "No CTO is secured.", "say_instead": "Actively recruiting a hardware-security co-founder."},
+        {"pattern": "\\bpre-?seed bridge\\b|\\bround (?:1|one)\\b.{0,20}\\bprivate\\b", "reason": "Private bridge round is internal only.", "say_instead": "The raise is £1.75M: £250k SEIS tranche plus £1.5M seed."},
+        {"pattern": "\\b(?:100|sub-100)\\s*(?:µs|us|microseconds?)\\b.{0,30}\\b(?:measured|proven|tested|achieved)\\b", "reason": "Latency is a target, not measured.", "say_instead": "Wire-speed isolation is the design target."}
+      ]
+    },
+    "JARVIS": {
+      "label": "Jarvis",
+      "aliases": ["jarvis", "jarvis nova", "ai bluetooth"],
+      "facts": [
+        {"id": "jv-what", "text": "Jarvis is a consent-first live conversation assistant: it listens, retrieves the answer from the user's own verified information, and delivers it discreetly through the earbuds or hearing aids they already wear, plus a watch and screen.", "tags": ["what", "product", "pitch"]},
+        {"id": "jv-built", "text": "Jarvis Nova runs today on Windows and is used on live investor calls; an Android phone and Galaxy Watch app exists and is being upgraded.", "tags": ["product", "traction", "built"]},
+        {"id": "jv-hearing", "text": "Dale built Jarvis as a Phonak hearing-aid user; delivery to Bluetooth hearing aids is working today.", "tags": ["founder story", "hearing", "accessibility"]},
+        {"id": "jv-patent", "text": "UK patent application GB2623320.5 filed (autumn 2026) — pending.", "tags": ["patent", "ip"]},
+        {"id": "jv-niches", "text": "First markets: founders on investor calls, hearing-aid users, then regulated advisers in a supervised mode using approved content only.", "tags": ["market", "customers"]},
+        {"id": "jv-price", "text": "Planned paid tier: £15 to £25 a month after beta.", "tags": ["pricing", "business model"]},
+        {"id": "jv-beta", "text": "Beta target: five active users by 15 December 2026.", "tags": ["traction", "plan"]},
+        {"id": "jv-diff", "text": "Difference from Otter, Granola and Cluely: works in person as well as online, delivers to hearing aids, and blocks false claims about your business before they reach your ear.", "tags": ["competition", "differentiation"]}
+      ],
+      "banned": [
+        {"pattern": "\\bmac(?:book)?\\b.{0,40}\\b(?:notch|companion|overlay)\\b.{0,30}\\b(?:built|works|working|exists|running)\\b", "reason": "No Mac version exists.", "say_instead": "Runs on Windows today."},
+        {"pattern": "\\b(?:paying|existing) (?:users|customers|subscribers)\\b|\\bjarvis revenue\\b", "reason": "No paying users yet.", "say_instead": "Beta users are being recruited now."},
+        {"pattern": "\\b(?:jarvis )?(?:is |are |been )?patented\\b|\\bpatent (?:is |has been )?granted\\b", "reason": "Patent application pending.", "say_instead": "UK patent application filed, pending."},
+        {"pattern": "\\bring\\b.{0,30}\\b(?:works|working|built|integrated|done)\\b", "reason": "Ring control is not built.", "say_instead": "Watch controls work today; ring is on the roadmap."},
+        {"pattern": "\\bwe don'?t record\\b.{0,40}\\b(?:gdpr|data protection)\\b.{0,20}\\b(?:doesn'?t|does not|n/?a|not apply)\\b", "reason": "UK GDPR still applies to live processing.", "say_instead": "Consent-first: disclosed, no audio stored."}
+      ]
+    },
+    "SKV": {
+      "label": "Sovereign Key Vault",
+      "aliases": ["skv", "sovereign key vault", "key vault"],
+      "facts": [
+        {"id": "skv-what", "text": "Sovereign Key Vault gives organisations UK-controlled custody of their encryption keys, so they can show who really controls their data.", "tags": ["what", "product", "pitch"]},
+        {"id": "skv-patent", "text": "UK patent application GB2623321.3 filed (autumn 2026) — pending.", "tags": ["patent", "ip"]},
+        {"id": "skv-model", "text": "Route to market: partner with non-US key-management vendors (Thales, Utimaco) and sell a fixed-fee CLOUD Act exposure assessment.", "tags": ["business model", "go to market"]}
+      ],
+      "banned": [
+        {"pattern": "\\bFIPS[- ]?(?:140-?3?)?\\s*(?:certified|certification (?:held|achieved))\\b", "reason": "No certification held.", "say_instead": "Uses partner vendors' certified products."},
+        {"pattern": "\\b(?:partner|reseller) (?:agreement|status)\\b.{0,20}\\b(?:signed|secured|confirmed)\\b", "reason": "Partner applications not yet accepted.", "say_instead": "Partner applications are in progress."}
+      ]
+    }
+  },
+  "global_banned": [
+    {"pattern": "\\b(?:harry manley|pxn)\\b.{0,40}\\b(?:investing|interested|in talks|backing)\\b", "reason": "PXN conversation is closed.", "say_instead": "Not an active conversation."},
+    {"pattern": "\\bincorporated\\b|\\bcompanies house\\b", "reason": "Never discuss incorporation status externally.", "say_instead": ""},
+    {"pattern": "\\btrade ?mark\\b.{0,30}\\b(?:conflict|clash|dispute)\\b", "reason": "Never raise the name conflict externally.", "say_instead": ""}
+  ],
+  "ip_safe": {
+    "enabled_by_default": true,
+    "prohibited_terms": ["DPU", "TDX", "eBPF", "FPGA", "GPIO", "SSR", "BlueField", "Gramine", "solid-state relay", "PCIe", "data processing unit"],
+    "substitutes": {
+      "DPU": "hardware enforcement processor",
+      "data processing unit": "hardware enforcement processor",
+      "TDX": "secure execution environment",
+      "eBPF": "wire-speed packet inspection",
+      "FPGA": "hardware enforcement processor",
+      "GPIO": "electronic isolation mechanism",
+      "SSR": "physical network severance component",
+      "solid-state relay": "physical network severance component",
+      "BlueField": "hardware enforcement processor",
+      "Gramine": "secure execution environment",
+      "PCIe": "hardware interface"
+    }
+  }
+}
