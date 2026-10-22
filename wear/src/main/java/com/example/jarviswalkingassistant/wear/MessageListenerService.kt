@@ -12,8 +12,10 @@ import com.google.android.gms.wearable.WearableListenerService
 
 class MessageListenerService : WearableListenerService() {
     override fun onMessageReceived(e: MessageEvent) {
+        if (e.path == "/jarvis/keys") { WatchLink.receiveKeys(this, String(e.data)); return }
         if (e.path != "/jarvis/advice") return
         WatchLink.receive(this, String(e.data))
+        if (WatchService.running) return   // watch is running on its own: screen shows the watch engine
         val s = WatchLink.state.value
         if (s.card.isNotBlank() && !WatchActivity.visible) notify(s)
     }

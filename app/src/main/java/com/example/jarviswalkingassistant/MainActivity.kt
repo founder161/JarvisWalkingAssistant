@@ -58,6 +58,7 @@ import com.example.jarviswalkingassistant.core.Style
 import com.example.jarviswalkingassistant.core.Whisper
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.withContext
 import java.io.File
 
@@ -84,7 +85,24 @@ private val ACT_NAMES = mapOf(
     "tactic" to "Tactic", "commit" to "Commitment", "direct" to "You asked"
 )
 
+/** Push the keys and settings to the watch so it can run on its own. Wear data layer = encrypted Bluetooth link to the paired watch only. */
+fun syncWatch(ctx: android.content.Context) {
+    val p = Prefs(ctx)
+    if (!p.ready) return
+    val j = org.json.JSONObject().put("anthropic", p.anthropicKey).put("assembly", p.assemblyKey).put("venture", p.venture)
+        .put("model", p.model).put("context", p.context).put("web", p.web).put("ipSafe", p.ipSafe)
+    kotlinx.coroutines.CoroutineScope(Dispatchers.IO).launch {
+        try {
+            val app = ctx.applicationContext
+            val nodes = com.google.android.gms.wearable.Wearable.getNodeClient(app).connectedNodes.await()
+            val mc = com.google.android.gms.wearable.Wearable.getMessageClient(app)
+            nodes.forEach { mc.sendMessage(it.id, "/jarvis/keys", j.toString().toByteArray()).await() }
+        } catch (_: Exception) {}
+    }
+}
+
 class MainActivity : ComponentActivity() {
+    override fun onResume() { super.onResume(); syncWatch(this) }
 
     private val perms = registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {}
 
@@ -481,7 +499,7 @@ private fun SetupScreen() {
                 supportingText = { Text(when { saved && p.anthropicKey.isNotBlank() -> "Saved ✓  ${p.anthropicKey.take(7)}…${p.anthropicKey.takeLast(4)}"; claude.isBlank() -> "Paste your key, then press Save"; else -> "Not saved yet — press Save" },
                     color = if (saved) J.verified else J.unverified) })
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Button(onClick = { p.anthropicKey = claude.trim(); claude = p.anthropicKey; saved = true; test = null }, enabled = claude.isNotBlank() && !saved) { Text("Save") }
+                Button(onClick = { p.anthropicKey = claude.trim(); claude = p.anthropicKey; saved = true; test = null; syncWatch(ctx) }, enabled = claude.isNotBlank() && !saved) { Text("Save") }
                 FilledTonalButton(enabled = saved && p.ready && !testing, onClick = {
                     testing = true; test = "Testing…"
                     scope.launch {
@@ -498,7 +516,8 @@ private fun SetupScreen() {
             OutlinedTextField(assembly, { assembly = it; aSaved = false }, Modifier.fillMaxWidth(), label = { Text("AssemblyAI key (live transcription)") },
                 visualTransformation = PasswordVisualTransformation(), singleLine = true,
                 supportingText = { Text(if (aSaved && p.assemblyKey.isNotBlank()) "Saved ✓" else if (assembly.isBlank()) "Optional — without it the phone's own recogniser is used (no speaker labels)" else "Press Save", color = if (aSaved) J.verified else J.dim) })
-            if (!aSaved && assembly.isNotBlank()) Button(onClick = { p.assemblyKey = assembly.trim(); assembly = p.assemblyKey; aSaved = true }) { Text("Save") }
+            if (!aSaved && assembly.isNotBlank()) Button(onClick = { p.assemblyKey = assembly.trim(); assembly = p.assemblyKey; aSaved = true; syncWatch(ctx) }) { Text("Save") }
+            Text("Saved keys are copied to your watch automatically, so it can run Jarvis without the phone.", color = J.dim, fontSize = 12.sp)
         }
         Group("Today's brief") {
             OutlinedTextField(brief, { brief = it; p.context = it }, Modifier.fillMaxWidth().heightIn(min = 120.dp),

@@ -18,14 +18,22 @@ data class WatchState(
     val headline: String = "", val units: List<String> = emptyList(), val pos: Int = -1, val whispered: Int = -1,
     val pending: Int = 0, val style: String = "CUES", val solo: Boolean = false, val ahead: String = "OFF",
     val askNext: Boolean = false, val partial: Boolean = false,
+    val running: Boolean = false, val status: String = "", val local: Boolean = false, val heard: String = "",
 )
 
 object WatchLink {
+    /** what the phone last sent */
     val state = MutableStateFlow(WatchState())
+    /** what the watch's own engine shows (standalone mode) */
+    val local = MutableStateFlow(WatchState())
+    /** phone seen in the last 20 s */
+    @Volatile var phoneSeenAt = 0L
+    val phoneLive: Boolean get() = System.currentTimeMillis() - phoneSeenAt < 20_000
     private val scope = CoroutineScope(Dispatchers.IO)
 
     fun receive(ctx: Context, json: String) {
         val j = try { JSONObject(json) } catch (e: Exception) { return }
+        phoneSeenAt = System.currentTimeMillis()
         state.value = WatchState(
             act = j.optString("act"), label = j.optString("label"), card = j.optString("card"),
             say = j.optString("say"), index = j.optInt("index"), total = j.optInt("total"),
@@ -34,7 +42,7 @@ object WatchLink {
             units = j.optJSONArray("units")?.let { a -> (0 until a.length()).map { a.optString(it) } } ?: emptyList(),
             pos = j.optInt("pos", -1), whispered = j.optInt("whispered", -1), pending = j.optInt("pending"),
             style = j.optString("style", "CUES"), solo = j.optBoolean("solo"), ahead = j.optString("ahead", "OFF"),
-            askNext = j.optBoolean("askNext"), partial = j.optBoolean("partial"))
+            askNext = j.optBoolean("askNext"), partial = j.optBoolean("partial"), running = j.optString("phase") != "IDLE")
         buzz(ctx, j.optInt("buzz"))
     }
 
@@ -49,6 +57,19 @@ object WatchLink {
             else -> return
         }
         v.vibrate(effect)
+    }
+
+    /** Keys and settings pushed from the phone: store on the watch so it can run alone. */
+    fun receiveKeys(ctx: Context, json: String) {
+        val j = try { JSONObject(json) } catch (e: Exception) { return }
+        val p = WatchPrefs(ctx)
+        j.optString("anthropic").takeIf { it.isNotBlank() }?.let { p.anthropicKey = it }
+        j.optString("assembly").takeIf { it.isNotBlank() }?.let { p.assemblyKey = it }
+        j.optString("venture").takeIf { it.isNotBlank() }?.let { p.venture = it }
+        j.optString("model").takeIf { it.isNotBlank() }?.let { p.model = it }
+        if (j.has("context")) p.context = j.optString("context")
+        if (j.has("web")) p.web = j.optBoolean("web"); if (j.has("ipSafe")) p.ipSafe = j.optBoolean("ipSafe")
+        local.value = local.value.copy(status = if (p.ready) "Keys received from phone ✓" else "Keys incomplete")
     }
 
     fun cmd(ctx: Context, command: String) {
