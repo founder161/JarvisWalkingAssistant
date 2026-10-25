@@ -25,6 +25,7 @@ class WhisperAhead(private val speak: (String) -> Unit, private val log: (String
     private var whisperedAt = 0L
     private var lastProgressAt = 0L
     private var lastRepeatAt = 0L
+    private var repeats = 0
     var active = false; private set
     var adviceId = 0L; private set
 
@@ -103,7 +104,7 @@ class WhisperAhead(private val speak: (String) -> Unit, private val log: (String
     private fun whisperNext() {
         val next = whispered + 1
         if (next >= phrases.size) { active = false; return }
-        whispered = next; whisperedAt = System.currentTimeMillis()
+        whispered = next; whisperedAt = System.currentTimeMillis(); repeats = 0
         speak(phrases[next])
     }
 
@@ -124,13 +125,18 @@ class WhisperAhead(private val speak: (String) -> Unit, private val log: (String
         return Event.NONE
     }
 
-    /** Call a few times a second. Repeats the current phrase if he's gone quiet without starting it. */
+    /**
+     * Call a few times a second. If he's gone quiet without starting the phrase, repeats it once after 3.5 s and once
+     * more after that — then stops and goes quiet. It never nags: if he isn't delivering the answer, that's his call.
+     */
     fun tick(now: Long = System.currentTimeMillis()) {
         if (!active || whispered < 0) return
         val f = follower ?: return
         val waiting = f.pos < whispered || (f.pos == whispered && f.frac < 0.2)
-        if (waiting && now - maxOf(whisperedAt, lastProgressAt, lastRepeatAt) > 3500) {
-            lastRepeatAt = now
+        if (!waiting) return
+        if (now - maxOf(whisperedAt, lastProgressAt, lastRepeatAt) > 3500) {
+            if (repeats >= 2) { active = false; log("whisper-ahead: no take-up, going quiet"); return }
+            repeats++; lastRepeatAt = now
             speak(phrases[whispered])
         }
     }
