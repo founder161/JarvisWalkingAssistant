@@ -309,6 +309,7 @@ class JarvisService : Service(), SttListener, TextToSpeech.OnInitListener {
     override fun onStatus(status: String) { com.example.jarviswalkingassistant.core.JLog.d("mic", status); JarvisState.set { it.copy(status = status) } }
 
     override fun onFinal(speaker: String, text: String) {
+        if (isEcho(text)) { com.example.jarviswalkingassistant.core.JLog.d("mic", "ignored my own voice (${text.length} chars)"); return }
         com.example.jarviswalkingassistant.core.JLog.d("mic", "heard ${text.length} chars from $speaker")
         val s = JarvisState.ui.value
         var me = s.meSpeaker
@@ -455,9 +456,22 @@ class JarvisService : Service(), SttListener, TextToSpeech.OnInitListener {
         }
     }
 
+    /** ECHO GUARD: what Jarvis said last and when, so its own voice coming back through the mic is never a question. */
+    @Volatile private var lastSaid = ""
+    @Volatile private var lastSaidUntil = 0L
+    private fun noteSaid(text: String) { lastSaid = text; lastSaidUntil = System.currentTimeMillis() + 2500 + text.length * 70L }
+    private fun isEcho(text: String): Boolean {
+        if (speaking || System.currentTimeMillis() < lastSaidUntil) return true
+        if (lastSaid.isBlank()) return false
+        val a = text.lowercase().split(Regex("\\W+")).filter { it.length > 2 }.toSet()
+        val b = lastSaid.lowercase().split(Regex("\\W+")).filter { it.length > 2 }.toSet()
+        return a.isNotEmpty() && a.intersect(b).size.toDouble() / a.size > 0.6
+    }
+
     private fun speak(text: String, force: Boolean = false) {
         if (!ttsReady || text.isBlank()) return
         if (!force && speaking) return
+        noteSaid(text)
         tts?.setSpeechRate(prefs.speechRate)
         tts?.speak(text, TextToSpeech.QUEUE_FLUSH, Bundle(), "j${System.currentTimeMillis()}")
     }
@@ -465,6 +479,7 @@ class JarvisService : Service(), SttListener, TextToSpeech.OnInitListener {
     /** Whisper-ahead phrases: a touch faster, always interrupt the previous phrase. */
     private fun speakAhead(text: String) {
         if (!ttsReady) return
+        noteSaid(text)
         tts?.setSpeechRate(prefs.aheadRate)
         tts?.speak(text, TextToSpeech.QUEUE_FLUSH, Bundle(), "a${System.currentTimeMillis()}")
         JarvisState.set { it.copy(follow = it.follow.copy(whispered = ahead.whispered)) }

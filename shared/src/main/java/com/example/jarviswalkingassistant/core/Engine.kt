@@ -65,7 +65,7 @@ class Engine(
     private var followArmedAt = 0L
     private var continueJob: Job? = null
     private var lastContinueAt = 0L
-    private val ahead: WhisperAhead = WhisperAhead({ t -> host.speak(t, ahead = true); whisperedChanged() })
+    private val ahead: WhisperAhead = WhisperAhead({ t -> say(t, ahead = true); whisperedChanged() })
     private fun whisperedChanged() { val w = ahead.whispered; set { copy(whispered = w) } }
     private var tickJob: Job? = null
 
@@ -82,6 +82,21 @@ class Engine(
 
     private inline fun set(f: State.() -> State) { state = state.f(); host.changed() }
 
+    /** ECHO GUARD: what Jarvis said last and when, so its own voice coming back through the mic is never a question. */
+    @Volatile private var lastSaid = ""
+    @Volatile private var lastSaidUntil = 0L
+    private fun say(text: String, ahead: Boolean) {
+        lastSaid = text; lastSaidUntil = System.currentTimeMillis() + 2500 + text.length * 70L   // ~ speaking time + tail
+        host.speak(text, ahead)
+    }
+    private fun isEcho(text: String): Boolean {
+        if (host.speaking || System.currentTimeMillis() < lastSaidUntil) return true
+        if (lastSaid.isBlank()) return false
+        val a = text.lowercase().split(Regex("\\W+")).filter { it.length > 2 }.toSet()
+        val b = lastSaid.lowercase().split(Regex("\\W+")).filter { it.length > 2 }.toSet()
+        return a.isNotEmpty() && a.intersect(b).size.toDouble() / a.size > 0.6
+    }
+
     fun start() {
         if (tickJob == null) tickJob = scope.launch { while (isActive) { delay(300); ahead.tick() } }
         set { copy(status = if (settings.anthropicKey.startsWith("sk-")) "Listening" else "No Claude key yet — open Jarvis on the phone once") }
@@ -93,8 +108,8 @@ class Engine(
     fun hush() { host.stopSpeaking(); ahead.stop(); focusUntil = 0; set { copy(status = "Listening") } }
     fun askNext() { set { copy(askNext = !askNext, status = if (!askNext) "Go on — ask me" else "Listening") } }
     fun move(d: Int) { focus(); set { if (advice.isEmpty()) this else copy(cursor = (cursor + d).coerceIn(0, advice.size - 1)) }; state.current?.let { arm(it, reset = true) } }
-    fun replay() { focus(); state.current?.let { host.speak(it.say.ifBlank { it.card }, ahead = false) } }
-    fun read() { focus(); state.current?.let { a -> host.speak(a.full.ifBlank { (listOf(a.say) + a.points).joinToString(" ") }, ahead = false) } }
+    fun replay() { focus(); state.current?.let { say(it.say.ifBlank { it.card }, ahead = false) } }
+    fun read() { focus(); state.current?.let { a -> say(a.full.ifBlank { (listOf(a.say) + a.points).joinToString(" ") }, ahead = false) } }
     fun styleChanged() { brain.wantFull = settings.style == Style.FULL || settings.ahead == Whisper.PHRASE || settings.readFull; state.current?.let { arm(it, reset = false) } }
     fun aheadChanged() { styleChanged(); if (settings.ahead == Whisper.OFF) ahead.stop() }
     fun ask(text: String) = ask(Line("ME", "Jarvis, $text"), "direct")
@@ -131,6 +146,7 @@ class Engine(
 
     /** speaker: "ME", "?" (unknown) or a diarisation label. */
     fun onFinal(speaker: String, text: String) {
+        if (isEcho(text)) { set { copy(status = "Listening") }; return }   // my own voice coming back in
         val s = state
         val direct = Brain.DIRECT.containsMatchIn(text)
         val delivering = follower != null && (ahead.active || System.currentTimeMillis() - followArmedAt < 90_000)
@@ -245,7 +261,7 @@ class Engine(
                 while (System.currentTimeMillis() < deadline && (host.silenceMs() < 750 || host.speaking)) delay(120)
                 if (System.currentTimeMillis() >= deadline) return@launch
             }
-            host.speak(if (asked && settings.readFull && a.full.isNotBlank()) a.full else a.say, ahead = false)
+            say(if (asked && settings.readFull && a.full.isNotBlank()) a.full else a.say, ahead = false)
             set { copy(advice = advice.map { if (it.id == a.id) it.copy(spoken = true) else it }) }
         }
     }

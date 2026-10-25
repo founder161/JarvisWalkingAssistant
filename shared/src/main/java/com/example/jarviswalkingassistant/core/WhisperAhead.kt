@@ -135,7 +135,7 @@ class WhisperAhead(private val speak: (String) -> Unit, private val log: (String
         val waiting = f.pos < whispered || (f.pos == whispered && f.frac < 0.2)
         if (!waiting) return
         if (now - maxOf(whisperedAt, lastProgressAt, lastRepeatAt) > 3500) {
-            if (repeats >= 2) { active = false; log("whisper-ahead: no take-up, going quiet"); return }
+            if (repeats >= 0) { active = false; log("whisper-ahead: no take-up, going quiet"); return }
             repeats++; lastRepeatAt = now
             speak(phrases[whispered])
         }
