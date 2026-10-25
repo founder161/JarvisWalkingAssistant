@@ -69,7 +69,7 @@ class JarvisService : Service(), SttListener, TextToSpeech.OnInitListener {
         const val SILENCE = "silence"; const val END = "end"; const val MARK_ME = "mark_me"
         const val PIN = "pin"; const val VENTURE = "venture"; const val ASK = "ask"
         const val ANSWER = "answer"; const val ASK_NEXT = "ask_next"; const val SOLO = "solo"
-        const val STYLE = "style"; const val AHEAD = "ahead"; const val READ = "read"; const val HUSH = "hush"
+        const val STYLE = "style"; const val AHEAD = "ahead"; const val READ = "read"; const val HUSH = "hush"; const val SET = "set"
         private const val CH_LIVE = "jarvis_live"; private const val CH_ADVICE = "jarvis_advice"
         private const val NOTE_ID = 7
 
@@ -127,18 +127,19 @@ class JarvisService : Service(), SttListener, TextToSpeech.OnInitListener {
             // so commands only apply while Jarvis is running. Settings changes still save.
             when (action) {
                 VENTURE -> extra?.let { prefs.venture = it; JarvisState.set { s -> s.copy(venture = it) } }
-                STYLE -> setStyle(extra); AHEAD -> setAhead(extra); SOLO -> toggleSolo()
+                STYLE -> setStyle(extra); AHEAD -> setAhead(extra); SOLO -> toggleSolo(); SET -> applySetting(extra)
                 ASK -> extra?.let { q -> startForegroundNow(); JarvisState.set { it.copy(running = true, mode = Mode.PRIVATE, phase = Phase.PAUSED, status = "Private — microphone off") }; onFinal("ME", "Jarvis, $q"); return START_STICKY }
             }
             stopSelf(startId)
             return START_NOT_STICKY
         }
+        com.example.jarviswalkingassistant.core.JLog.d("cmd", "$action${extra?.let { ":$it" } ?: ""} (running=${JarvisState.ui.value.running} phase=${JarvisState.ui.value.phase})")
         when (action) {
             START_MEETING -> begin(Mode.MEETING)
             START_DAY -> begin(Mode.DAY)
             PRIVATE -> goPrivate()
             TOGGLE_PAUSE -> togglePause()
-            REPLAY -> JarvisState.current()?.let { speak(it.say.ifBlank { it.card }, force = true) }
+            REPLAY -> { focus(); JarvisState.current()?.let { speak(it.say.ifBlank { it.card }, force = true) } }
             NEXT -> move(+1); PREV -> move(-1)
             SILENCE, HUSH -> hush()
             END -> endMeeting()
@@ -151,7 +152,8 @@ class JarvisService : Service(), SttListener, TextToSpeech.OnInitListener {
             SOLO -> toggleSolo()
             STYLE -> setStyle(extra)
             AHEAD -> setAhead(extra)
-            READ -> JarvisState.current()?.let { a -> speak(a.full.ifBlank { (listOf(a.say) + a.points).joinToString(" ") }, force = true) }
+            SET -> applySetting(extra)
+            READ -> { focus(); JarvisState.current()?.let { a -> speak(a.full.ifBlank { (listOf(a.say) + a.points).joinToString(" ") }, force = true) } }
         }
         return START_STICKY
     }
@@ -187,9 +189,10 @@ class JarvisService : Service(), SttListener, TextToSpeech.OnInitListener {
         else { stt?.stop(); stt = null; tts?.stop(); ahead.stop(); setPhase(Phase.PAUSED, "Paused"); refreshNotification(); pushWatch() }
     }
 
-    private fun hush() { tts?.stop(); ahead.stop(); speaking = false; setPhase(Phase.LISTENING); pushWatch() }
+    private fun hush() { tts?.stop(); ahead.stop(); speaking = false; focusUntil = 0; setPhase(Phase.LISTENING); pushWatch() }
 
     private fun move(d: Int) {
+        focus()
         JarvisState.set { s -> if (s.advice.isEmpty()) s else s.copy(cursor = (s.cursor + d).coerceIn(0, s.advice.size - 1)) }
         JarvisState.current()?.let { armFollower(it, reset = true) }
         refreshNotification(); pushWatch(buzz = 0)
@@ -198,6 +201,24 @@ class JarvisService : Service(), SttListener, TextToSpeech.OnInitListener {
     private fun pin() = JarvisState.set { s ->
         val cur = s.advice.getOrNull(s.cursor) ?: return@set s
         s.copy(advice = s.advice.map { if (it.id == cur.id) it.copy(pinned = !it.pinned) else it })
+    }
+
+    /** "key=value" from the watch's Settings page. */
+    private fun applySetting(kv: String?) {
+        val (k, v) = kv?.split("=", limit = 2)?.let { it[0] to it.getOrElse(1) { "" } } ?: return
+        when (k) {
+            "model" -> prefs.model = v
+            "web" -> prefs.web = v == "true"
+            "ipSafe" -> prefs.ipSafe = v == "true"
+            "whisper" -> prefs.whisper = v == "true"
+            "readFull" -> { prefs.readFull = v == "true"; brain.wantFull = prefs.style == Style.FULL || prefs.ahead == Whisper.PHRASE || prefs.readFull }
+            "speechRate" -> v.toFloatOrNull()?.let { prefs.speechRate = it }
+            "aheadRate" -> v.toFloatOrNull()?.let { prefs.aheadRate = it }
+            "venture" -> { prefs.venture = v; JarvisState.set { it.copy(venture = v) } }
+        }
+        JarvisState.set { it.copy(status = "Setting: $k = $v") }
+        pushWatch()
+        syncWatch(this)
     }
 
     private fun toggleSolo() {
@@ -402,22 +423,31 @@ class JarvisService : Service(), SttListener, TextToSpeech.OnInitListener {
     }
 
     // ------------------------------------------------------------------ delivery
+    /** FOCUS: once I've asked for an answer or moved to one, nothing live replaces it on screen or talks over it (see Engine). */
+    @Volatile private var focusUntil = 0L
+    private val focused: Boolean get() = System.currentTimeMillis() < focusUntil
+    private fun focus(ms: Long = 120_000) { focusUntil = System.currentTimeMillis() + ms }
+
     private fun deliver(a: Advice, asked: Boolean) {
-        JarvisState.putAdvice(a)
-        refreshNotification(alert = a.urgency >= 1)
-        val buzz = when (a.act) { "warn" -> 3; "factcheck" -> 2; else -> if (a.urgency >= 1) 1 else 0 }
+        val hold = !asked && focused && a.act != "warn"
+        JarvisState.putAdvice(a, keepPlace = hold)
+        if (asked) focus()
+        com.example.jarviswalkingassistant.core.JLog.d("brain", "${if (asked) "asked" else "live"} ${a.act} ${a.label} ${a.latencyMs}ms${if (hold) " (held — you're on an answer)" else ""}")
+        refreshNotification(alert = a.urgency >= 1 && !hold)
+        val buzz = when (a.act) { "warn" -> 3; "factcheck" -> 2; else -> if (a.urgency >= 1 && !hold) 1 else 0 }
         pushWatch(buzz)
-        if (asked || a.act == "answer") armFollower(a, reset = true)
+        if (asked || (a.act == "answer" && !hold)) armFollower(a, reset = true)
         if (asked && prefs.ahead != Whisper.OFF) {
             tts?.stop(); ahead.start(a, prefs.ahead)
             return
         }
         if (!prefs.whisper || a.say.isBlank() || a.urgency < 2) return
+        if (hold) return
         scope.launch {
             // Wait for a natural pause (hearing aids add ~0.3-0.5 s), unless it's a warning or I asked for it
             val deadline = System.currentTimeMillis() + 7000
             if (a.urgency < 3 && !asked) {
-                while (System.currentTimeMillis() < deadline && (stt?.silenceMs() ?: 9999) < 750) delay(120)
+                while (System.currentTimeMillis() < deadline && ((stt?.silenceMs() ?: 9999) < 750 || speaking)) delay(120)
                 if (System.currentTimeMillis() >= deadline) return@launch // missed the gap: screen + watch only
             }
             speak(if (asked && prefs.readFull && a.full.isNotBlank()) a.full else a.say)

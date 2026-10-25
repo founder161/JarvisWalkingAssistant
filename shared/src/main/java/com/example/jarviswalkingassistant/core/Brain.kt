@@ -173,7 +173,13 @@ class Brain(val gate: ClaimsGate, private val promptTemplate: String, private va
                      onText: ((String) -> Unit)?, maxTokens: Int? = null): String {
         val asked = kind != "live"
         val tokens = maxTokens ?: (if (asked) (if (wantFull) (if (detail) 2000 else 1300) else (if (detail) 1300 else 800)) else (if (wantFull) 700 else 400))
-        val ladders = listOf(
+        // Fastest request settings each model accepts, best first. Opus-class models only take adaptive thinking;
+        // the others take between_tools / disabled. A refused setting is remembered per model so it's never retried.
+        val ladders = if (model.contains("opus")) listOf(
+            JSONObject().put("thinking", JSONObject().put("type", "adaptive")).put("output_config", JSONObject().put("effort", "low")),
+            JSONObject().put("output_config", JSONObject().put("effort", "low")),
+            JSONObject())
+        else listOf(
             JSONObject().put("thinking", JSONObject().put("type", "between_tools")).put("output_config", JSONObject().put("effort", "low")),
             JSONObject().put("thinking", JSONObject().put("type", "disabled")).put("output_config", JSONObject().put("effort", "low")),
             JSONObject().put("thinking", JSONObject().put("type", "disabled")),

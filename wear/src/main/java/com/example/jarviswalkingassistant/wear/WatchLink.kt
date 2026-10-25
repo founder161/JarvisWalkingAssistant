@@ -46,7 +46,10 @@ object WatchLink {
             style = j.optString("style", "CUES"), solo = j.optBoolean("solo"), ahead = j.optString("ahead", "OFF"),
             askNext = j.optBoolean("askNext"), partial = j.optBoolean("partial"), running = j.optString("phase") != "IDLE")
         buzz(ctx, j.optInt("buzz"))
+        val sig = "${j.optString("phase")}|${j.optString("style")}|${j.optString("ahead")}|${j.optBoolean("solo")}|${j.optBoolean("askNext")}|${j.optInt("index")}/${j.optInt("total")}"
+        if (sig != lastSig) { lastSig = sig; JLog.d("link", "phone → $sig") }
     }
+    private var lastSig = ""
 
     /** Haptic language: 1 = answer ready, 2 = fact-check, 3 = careful (you're about to say something wrong), 4 = they asked something — it's waiting. */
     fun buzz(ctx: Context, kind: Int) {
@@ -71,6 +74,8 @@ object WatchLink {
         j.optString("model").takeIf { it.isNotBlank() }?.let { p.model = it }
         if (j.has("context")) p.context = j.optString("context")
         if (j.has("web")) p.web = j.optBoolean("web"); if (j.has("ipSafe")) p.ipSafe = j.optBoolean("ipSafe")
+        if (j.has("whisper")) p.whisper = j.optBoolean("whisper"); if (j.has("readFull")) p.readFull = j.optBoolean("readFull")
+        if (j.has("speechRate")) p.speechRate = j.optDouble("speechRate").toFloat(); if (j.has("aheadRate")) p.aheadRate = j.optDouble("aheadRate").toFloat()
         local.value = local.value.copy(status = if (p.ready) "Keys received from phone ✓" else "Keys incomplete")
         JLog.d("link", "keys from phone: claude=${if (p.ready) "ok" else "MISSING"} assembly=${if (p.assemblyKey.isNotBlank()) "ok" else "none"} venture=${p.venture}")
     }

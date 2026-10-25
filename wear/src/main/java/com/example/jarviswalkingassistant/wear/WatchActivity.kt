@@ -87,14 +87,18 @@ class WatchActivity : ComponentActivity() {
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         setContent {
             MaterialTheme {
-                var showLog by remember { mutableStateOf(false) }
-                if (showLog) LogScreen(onClose = { showLog = false }) else Main(onLog = { showLog = true })
+                var page by remember { mutableStateOf("main") }
+                when (page) {
+                    "log" -> LogScreen(onClose = { page = "main" })
+                    "settings" -> SettingsScreen(onClose = { page = "main" })
+                    else -> Main(onLog = { page = "log" }, onSettings = { page = "settings" })
+                }
             }
         }
     }
 
     @Composable
-    private fun Main(onLog: () -> Unit) {
+    private fun Main(onLog: () -> Unit, onSettings: () -> Unit) {
         val phoneState by WatchLink.state.collectAsState()
         val localState by WatchLink.local.collectAsState()
         val svcRunning by WatchService.runningFlow.collectAsState()
@@ -137,6 +141,7 @@ class WatchActivity : ComponentActivity() {
                     }
                     if (ready) item { Big("▶  Start on watch", Color(0xFF14532D)) { startOnWatch() } }
                     item { Text(localState.status, color = dim, fontSize = 11.sp, textAlign = TextAlign.Center) }
+                    item { Big("Settings", Color(0xFF181B26)) { onSettings() } }
                     item { Big("Log", Color(0xFF181B26)) { onLog() } }
                     return@ScalingLazyColumn
                 }
@@ -189,6 +194,7 @@ class WatchActivity : ComponentActivity() {
                     item { Big("■  Stop watch mode", Color(0xFF7F1D1D)) { JLog.d("tap", "stop"); WatchService.send(this@WatchActivity, WatchService.STOP) } }
                     item { Text(s.status, color = dim, fontSize = 11.sp, textAlign = TextAlign.Center) }
                 }
+                item { Big("Settings", Color(0xFF181B26)) { onSettings() } }
                 item { Big("Log", Color(0xFF181B26)) { onLog() } }
                 item { Spacer(Modifier.height(20.dp)) }
             }
@@ -207,6 +213,67 @@ class WatchActivity : ComponentActivity() {
         Chip(onClick = onClick, modifier = Modifier.weight(1f).height(44.dp),
             colors = ChipDefaults.chipColors(backgroundColor = Color(0xFF181B26), contentColor = Color.White),
             label = { Text(label, fontSize = 13.sp, fontWeight = FontWeight.Bold, maxLines = 1) })
+    }
+
+    /**
+     * Settings, on the wrist — the same ones as the desktop and phone. A change applies to the watch's own engine at
+     * once and is sent to the phone too, so both stay in step whichever one is doing the listening.
+     */
+    @Composable
+    private fun SettingsScreen(onClose: () -> Unit) {
+        val p = remember { WatchPrefs(this@WatchActivity) }
+        val gate = remember { com.example.jarviswalkingassistant.core.ClaimsGate(assets.open("facts_ledger.json").bufferedReader().readText()) }
+        val ventures = remember { gate.ventures.keys.toList() + "ALL" }
+        var venture by remember { mutableStateOf(p.venture) }
+        var model by remember { mutableStateOf(p.model) }
+        var web by remember { mutableStateOf(p.web) }
+        var whisper by remember { mutableStateOf(p.whisper) }
+        var readFull by remember { mutableStateOf(p.readFull) }
+        var ipSafe by remember { mutableStateOf(p.ipSafe) }
+        var rate by remember { mutableFloatStateOf(p.speechRate) }
+        var aheadRate by remember { mutableFloatStateOf(p.aheadRate) }
+        val list = rememberScalingLazyListState()
+        fun push(k: String, v: Any) {
+            JLog.d("tap", "setting $k=$v")
+            WatchLink.cmd(this@WatchActivity, if (k == "venture") "venture:$v" else "set:$k=$v")
+            WatchService.engine?.styleChanged()
+        }
+        val dim = Color(0xFF8A90A6)
+        Scaffold(positionIndicator = { PositionIndicator(scalingLazyListState = list) }) {
+            ScalingLazyColumn(state = list, modifier = Modifier.fillMaxSize().background(Color(0xFF06070B)), contentPadding = PaddingValues(horizontal = 10.dp, vertical = 28.dp)) {
+                item { Text("SETTINGS", color = Color(0xFF7C5CFF), fontSize = 12.sp, fontWeight = FontWeight.Black, letterSpacing = 1.sp) }
+                item { Big("← Back", Color(0xFF181B26)) { onClose() } }
+                item { Text("Tap a row to change it", color = dim, fontSize = 10.sp, textAlign = TextAlign.Center) }
+                item { Big("Venture: " + gate.label(venture), Color(0xFF3B2A8A)) {
+                    venture = ventures[(ventures.indexOf(venture) + 1).mod(ventures.size)]; p.venture = venture; push("venture", venture) } }
+                item { Big("Brain: " + if (model == "max") "Max (deepest)" else "Smart (fast)", Color(0xFF181B26)) {
+                    model = if (model == "max") "smart" else "max"; p.model = model; push("model", model) } }
+                item { Big("Web intel: " + if (web) "On" else "Off", Color(0xFF181B26)) { web = !web; p.web = web; push("web", web) } }
+                item { Big("Whisper in pauses: " + if (whisper) "On" else "Off", Color(0xFF181B26)) { whisper = !whisper; p.whisper = whisper; push("whisper", whisper) } }
+                item { Big("Read whole answer: " + if (readFull) "On" else "Opener only", Color(0xFF181B26)) { readFull = !readFull; p.readFull = readFull; push("readFull", readFull) } }
+                item { Big("IP-safe wording: " + if (ipSafe) "On" else "Off", Color(0xFF181B26)) { ipSafe = !ipSafe; p.ipSafe = ipSafe; push("ipSafe", ipSafe) } }
+                item { Text("Speech speed", color = dim, fontSize = 11.sp) }
+                item {
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Half("−") { rate = (rate - 0.1f).coerceAtLeast(0.8f); p.speechRate = rate; push("speechRate", "%.2f".format(rate)) }
+                        Half("%.1f×".format(rate)) { }
+                        Half("+") { rate = (rate + 0.1f).coerceAtMost(1.6f); p.speechRate = rate; push("speechRate", "%.2f".format(rate)) }
+                    }
+                }
+                item { Text("Whisper-ahead speed", color = dim, fontSize = 11.sp) }
+                item {
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Half("−") { aheadRate = (aheadRate - 0.1f).coerceAtLeast(0.9f); p.aheadRate = aheadRate; push("aheadRate", "%.2f".format(aheadRate)) }
+                        Half("%.1f×".format(aheadRate)) { }
+                        Half("+") { aheadRate = (aheadRate + 0.1f).coerceAtMost(1.8f); p.aheadRate = aheadRate; push("aheadRate", "%.2f".format(aheadRate)) }
+                    }
+                }
+                item { Big("Test voice", Color(0xFF14532D)) { JLog.d("tap", "test voice"); WatchService.send(this@WatchActivity, WatchService.ASK, "say hello in one short sentence") } }
+                item { Text("Keys: Claude ${if (p.ready) "✓" else "missing"} · AssemblyAI ${if (p.assemblyKey.isNotBlank()) "✓" else "missing"}\nKeys and today's brief come from the phone (Setup tab).", color = dim, fontSize = 10.sp, textAlign = TextAlign.Center) }
+                item { Big("← Back", Color(0xFF181B26)) { onClose() } }
+                item { Spacer(Modifier.height(20.dp)) }
+            }
+        }
     }
 
     /** The diagnostic log, on the wrist. "Send to phone" drops it in the phone's Downloads/JarvisNova folder. */

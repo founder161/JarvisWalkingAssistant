@@ -23,6 +23,7 @@ class PhoneMessageListenerService : WearableListenerService() {
                 cmd.startsWith("style:") -> JarvisService.send(this, JarvisService.STYLE, cmd.removePrefix("style:"))
                 cmd.startsWith("ahead:") -> JarvisService.send(this, JarvisService.AHEAD, cmd.removePrefix("ahead:"))
                 cmd.startsWith("ask:") -> JarvisService.send(this, JarvisService.ASK, cmd.removePrefix("ask:"))
+                cmd.startsWith("set:") -> JarvisService.send(this, JarvisService.SET, cmd.removePrefix("set:"))
                 else -> JarvisService.send(this, cmd)
             }
         } catch (ex: Exception) {

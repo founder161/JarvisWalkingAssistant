@@ -69,6 +69,17 @@ class Engine(
     private fun whisperedChanged() { val w = ahead.whispered; set { copy(whispered = w) } }
     private var tickJob: Job? = null
 
+    /**
+     * FOCUS: once Dale has asked for an answer (Answer / Ask / Just me / "Jarvis…") or moved to one, the screen and
+     * his ear belong to that answer. Live listening carries on in the background — new advice is kept in the list
+     * underneath, questions go to pending with a buzz — but nothing replaces what he's reading or cuts across what
+     * he's hearing until he presses something or the room has been quiet for a while.
+     */
+    @Volatile private var focusUntil = 0L
+    private val focused: Boolean get() = System.currentTimeMillis() < focusUntil
+    private fun focus(ms: Long = 120_000) { focusUntil = System.currentTimeMillis() + ms }
+    fun unfocus() { focusUntil = 0 }
+
     private inline fun set(f: State.() -> State) { state = state.f(); host.changed() }
 
     fun start() {
@@ -79,11 +90,11 @@ class Engine(
     fun destroy() { stop(); scope.cancel() }
 
     // ------------------------------------------------------------ controls
-    fun hush() { host.stopSpeaking(); ahead.stop(); set { copy(status = "Listening") } }
+    fun hush() { host.stopSpeaking(); ahead.stop(); focusUntil = 0; set { copy(status = "Listening") } }
     fun askNext() { set { copy(askNext = !askNext, status = if (!askNext) "Go on — ask me" else "Listening") } }
-    fun move(d: Int) { set { if (advice.isEmpty()) this else copy(cursor = (cursor + d).coerceIn(0, advice.size - 1)) }; state.current?.let { arm(it, reset = true) } }
-    fun replay() { state.current?.let { host.speak(it.say.ifBlank { it.card }, ahead = false) } }
-    fun read() { state.current?.let { a -> host.speak(a.full.ifBlank { (listOf(a.say) + a.points).joinToString(" ") }, ahead = false) } }
+    fun move(d: Int) { focus(); set { if (advice.isEmpty()) this else copy(cursor = (cursor + d).coerceIn(0, advice.size - 1)) }; state.current?.let { arm(it, reset = true) } }
+    fun replay() { focus(); state.current?.let { host.speak(it.say.ifBlank { it.card }, ahead = false) } }
+    fun read() { focus(); state.current?.let { a -> host.speak(a.full.ifBlank { (listOf(a.say) + a.points).joinToString(" ") }, ahead = false) } }
     fun styleChanged() { brain.wantFull = settings.style == Style.FULL || settings.ahead == Whisper.PHRASE || settings.readFull; state.current?.let { arm(it, reset = false) } }
     fun aheadChanged() { styleChanged(); if (settings.ahead == Whisper.OFF) ahead.stop() }
     fun ask(text: String) = ask(Line("ME", "Jarvis, $text"), "direct")
@@ -213,22 +224,25 @@ class Engine(
     }
 
     // ------------------------------------------------------------ delivery
-    private fun put(a: Advice) = set {
+    private fun put(a: Advice, keepPlace: Boolean = false) = set {
         val exists = advice.any { it.id == a.id }
         copy(advice = if (exists) advice.map { if (it.id == a.id) a.copy(pinned = it.pinned, spoken = it.spoken || a.spoken) else it } else (listOf(a) + advice).take(40),
-             cursor = if (exists) cursor else 0)
+             cursor = if (exists) cursor else if (keepPlace) (cursor + 1).coerceAtMost(39) else 0)
     }
 
     private fun deliver(a: Advice, asked: Boolean) {
-        put(a)
-        host.buzz(when (a.act) { "warn" -> 3; "factcheck" -> 2; else -> if (a.urgency >= 1) 1 else 0 })
-        if (asked || a.act == "answer") arm(a, reset = true)
+        val hold = !asked && focused && a.act != "warn"      // he's busy with an answer: file it underneath, don't take over
+        put(a, keepPlace = hold)
+        if (asked) focus()
+        host.buzz(when (a.act) { "warn" -> 3; "factcheck" -> 2; else -> if (a.urgency >= 1 && !hold) 1 else 0 })
+        if (asked || (a.act == "answer" && !hold)) arm(a, reset = true)
         if (asked && settings.ahead != Whisper.OFF) { host.stopSpeaking(); ahead.start(a, settings.ahead); return }
         if (!settings.whisper || a.say.isBlank() || a.urgency < 2) return
+        if (hold) return                                       // never talk over the answer he's on
         scope.launch {
             val deadline = System.currentTimeMillis() + 7000
             if (a.urgency < 3 && !asked) {
-                while (System.currentTimeMillis() < deadline && host.silenceMs() < 750) delay(120)
+                while (System.currentTimeMillis() < deadline && (host.silenceMs() < 750 || host.speaking)) delay(120)
                 if (System.currentTimeMillis() >= deadline) return@launch
             }
             host.speak(if (asked && settings.readFull && a.full.isNotBlank()) a.full else a.say, ahead = false)

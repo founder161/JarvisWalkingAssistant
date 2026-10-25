@@ -91,6 +91,7 @@ fun syncWatch(ctx: android.content.Context) {
     if (!p.ready) return
     val j = org.json.JSONObject().put("anthropic", p.anthropicKey).put("assembly", p.assemblyKey).put("venture", p.venture)
         .put("model", p.model).put("context", p.context).put("web", p.web).put("ipSafe", p.ipSafe)
+        .put("whisper", p.whisper).put("readFull", p.readFull).put("speechRate", p.speechRate.toDouble()).put("aheadRate", p.aheadRate.toDouble())
     kotlinx.coroutines.CoroutineScope(Dispatchers.IO).launch {
         try {
             val app = ctx.applicationContext

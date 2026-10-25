@@ -53,11 +53,11 @@ object JarvisState {
     fun addLine(l: Line) = set { it.copy(lines = (it.lines + l).takeLast(200), partial = "") }
 
     /** Insert or replace (streaming partials replace by id). */
-    fun putAdvice(a: Advice) = set {
+    fun putAdvice(a: Advice, keepPlace: Boolean = false) = set {
         val exists = it.advice.any { x -> x.id == a.id }
         val list = if (exists) it.advice.map { x -> if (x.id == a.id) a.copy(pinned = x.pinned, spoken = x.spoken || a.spoken) else x }
                    else (listOf(a) + it.advice).take(60)
-        it.copy(advice = list, cursor = if (exists) it.cursor else 0, lastLatencyMs = a.latencyMs,
+        it.copy(advice = list, cursor = if (exists) it.cursor else if (keepPlace) (it.cursor + 1).coerceAtMost(59) else 0, lastLatencyMs = a.latencyMs,
             commitments = if (a.act == "commit" && !exists) it.commitments + a.card else it.commitments)
     }
 
