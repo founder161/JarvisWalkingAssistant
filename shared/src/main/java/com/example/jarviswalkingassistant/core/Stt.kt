@@ -155,6 +155,7 @@ class AndroidStt(private val ctx: Context, private val l: SttListener) : Stt {
     @Volatile private var running = false
     @Volatile private var lastVoice = System.currentTimeMillis()
     private var segmented = false
+    private var engine = ""
     private var errors = 0
     private var lastPartial = ""
     private val am get() = ctx.getSystemService(Context.AUDIO_SERVICE) as android.media.AudioManager
@@ -178,9 +179,21 @@ class AndroidStt(private val ctx: Context, private val l: SttListener) : Stt {
         if (running) return@post
         running = true; errors = 0
         if (!SpeechRecognizer.isRecognitionAvailable(ctx)) { l.onStatus("No speech recogniser on this phone"); return@post }
+        // Which recogniser? Samsung's default one chimes on every (re)start; Google's is silent. Prefer, in order:
+        // Google's on-device recogniser (Android 12+), then Google's app recogniser, then whatever the phone offers.
+        val services = ctx.packageManager.queryIntentServices(Intent(android.speech.RecognitionService.SERVICE_INTERFACE), 0)
+            .map { android.content.ComponentName(it.serviceInfo.packageName, it.serviceInfo.name) }
+        val google = services.firstOrNull { it.packageName == "com.google.android.googlequicksearchbox" }
+            ?: services.firstOrNull { it.packageName.startsWith("com.google.") }
         val onDevice = android.os.Build.VERSION.SDK_INT >= 31 && SpeechRecognizer.isOnDeviceRecognitionAvailable(ctx)
         segmented = onDevice && android.os.Build.VERSION.SDK_INT >= 33
-        sr = (if (onDevice) SpeechRecognizer.createOnDeviceSpeechRecognizer(ctx) else SpeechRecognizer.createSpeechRecognizer(ctx)).apply {
+        engine = when { onDevice -> "on-device"; google != null -> google.packageName; else -> "default" }
+        l.onStatus("Recognisers: " + services.joinToString(", ") { it.packageName } + " → using $engine")
+        sr = (when {
+            onDevice -> SpeechRecognizer.createOnDeviceSpeechRecognizer(ctx)
+            google != null -> SpeechRecognizer.createSpeechRecognizer(ctx, google)
+            else -> SpeechRecognizer.createSpeechRecognizer(ctx)
+        }).apply {
             setRecognitionListener(object : RecognitionListener {
                 override fun onResults(b: Bundle?) { deliver(b); if (!segmented) restart(60) }
                 override fun onSegmentResults(b: Bundle) { deliver(b) }
@@ -203,7 +216,7 @@ class AndroidStt(private val ctx: Context, private val l: SttListener) : Stt {
                     l.onLevel(((rms + 2) / 12f).coerceIn(0f, 1f))
                     if (rms > 4f) lastVoice = System.currentTimeMillis()
                 }
-                override fun onReadyForSpeech(p: Bundle?) { errors = 0; l.onStatus(if (segmented) "Listening (on-device, continuous)" else if (onDevice) "Listening (on-device)" else "Listening (on-phone)") }
+                override fun onReadyForSpeech(p: Bundle?) { errors = 0; l.onStatus(if (segmented) "Listening ($engine, continuous)" else "Listening ($engine)") }
                 override fun onBeginningOfSpeech() { lastVoice = System.currentTimeMillis() }
                 override fun onBufferReceived(b: ByteArray?) {}
                 override fun onEndOfSpeech() {}
@@ -223,10 +236,8 @@ class AndroidStt(private val ctx: Context, private val l: SttListener) : Stt {
     /** Start (or restart) listening. In the non-segmented fallback the system chime is muted for the restart. */
     private fun listen() {
         val s = sr ?: return
-        if (!segmented) {
-            try { am.adjustStreamVolume(android.media.AudioManager.STREAM_SYSTEM, android.media.AudioManager.ADJUST_MUTE, 0) } catch (_: Exception) {}
-            try { am.adjustStreamVolume(android.media.AudioManager.STREAM_NOTIFICATION, android.media.AudioManager.ADJUST_MUTE, 0) } catch (_: Exception) {}
-        }
+        try { am.adjustStreamVolume(android.media.AudioManager.STREAM_SYSTEM, android.media.AudioManager.ADJUST_MUTE, 0) } catch (_: Exception) {}
+        try { am.adjustStreamVolume(android.media.AudioManager.STREAM_NOTIFICATION, android.media.AudioManager.ADJUST_MUTE, 0) } catch (_: Exception) {}
         try { s.startListening(intent()) } catch (e: Exception) { l.onStatus("Recogniser failed: ${e.message?.take(60)}"); restart(2000) }
     }
 
