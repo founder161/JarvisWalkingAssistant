@@ -288,6 +288,7 @@ class JarvisService : Service(), SttListener, TextToSpeech.OnInitListener {
     override fun onStatus(status: String) { com.example.jarviswalkingassistant.core.JLog.d("mic", status); JarvisState.set { it.copy(status = status) } }
 
     override fun onFinal(speaker: String, text: String) {
+        com.example.jarviswalkingassistant.core.JLog.d("mic", "heard ${text.length} chars from $speaker")
         val s = JarvisState.ui.value
         var me = s.meSpeaker
         val direct = Brain.DIRECT.containsMatchIn(text)

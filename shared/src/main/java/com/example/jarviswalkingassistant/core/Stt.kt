@@ -142,58 +142,101 @@ class AssemblyAiStt(private val apiKey: String, private val l: SttListener) : St
 }
 
 /**
- * Day mode / no AssemblyAI key: Android's own recogniser, restarted continuously.
- * Free and light on battery; no speaker labels.
+ * Day mode / no AssemblyAI key: Android's own recogniser.
+ *
+ * On Android 13+ this uses the ON-DEVICE recogniser in a segmented session: one continuous listen that hands back a
+ * result at each pause, never stops and restarts, and plays no chime. Older phones fall back to the restart loop, with
+ * the system chime muted around each restart and errors backed off so it can't chime itself in a loop.
  */
 class AndroidStt(private val ctx: Context, private val l: SttListener) : Stt {
-    override val name = "On-phone"
+    override val name = "On-device"
     private val main = Handler(Looper.getMainLooper())
     private var sr: SpeechRecognizer? = null
     @Volatile private var running = false
     @Volatile private var lastVoice = System.currentTimeMillis()
+    private var segmented = false
+    private var errors = 0
+    private var lastPartial = ""
+    private val am get() = ctx.getSystemService(Context.AUDIO_SERVICE) as android.media.AudioManager
     override fun silenceMs() = System.currentTimeMillis() - lastVoice
 
-    private val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+    private fun intent(): Intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
         putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
         putExtra(RecognizerIntent.EXTRA_LANGUAGE, "en-GB")
         putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
         putExtra(RecognizerIntent.EXTRA_PREFER_OFFLINE, true)
-        putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 1500)
+        putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 1200)
+        putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, 1200)
+        if (segmented) {
+            // continuous: a result per pause, session never ends on its own
+            putExtra("android.speech.extra.SEGMENTED_SESSION", RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS)
+            if (android.os.Build.VERSION.SDK_INT >= 33) putExtra("android.speech.extra.ENABLE_FORMATTING", "quality")
+        }
     }
 
     override fun start() = main.post {
         if (running) return@post
-        running = true
-        if (!SpeechRecognizer.isRecognitionAvailable(ctx)) { l.onStatus("No speech recogniser"); return@post }
-        sr = SpeechRecognizer.createSpeechRecognizer(ctx).apply {
+        running = true; errors = 0
+        if (!SpeechRecognizer.isRecognitionAvailable(ctx)) { l.onStatus("No speech recogniser on this phone"); return@post }
+        val onDevice = android.os.Build.VERSION.SDK_INT >= 31 && SpeechRecognizer.isOnDeviceRecognitionAvailable(ctx)
+        segmented = onDevice && android.os.Build.VERSION.SDK_INT >= 33
+        sr = (if (onDevice) SpeechRecognizer.createOnDeviceSpeechRecognizer(ctx) else SpeechRecognizer.createSpeechRecognizer(ctx)).apply {
             setRecognitionListener(object : RecognitionListener {
-                override fun onResults(b: Bundle?) {
-                    b?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull()?.let {
-                        if (it.isNotBlank()) l.onFinal("?", it)
-                    }
-                    restart(50)
-                }
+                override fun onResults(b: Bundle?) { deliver(b); if (!segmented) restart(60) }
+                override fun onSegmentResults(b: Bundle) { deliver(b) }
+                override fun onEndOfSegmentedSession() { if (running) restart(100) }
                 override fun onPartialResults(b: Bundle?) {
                     b?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull()?.let {
-                        lastVoice = System.currentTimeMillis(); l.onPartial(it)
+                        if (it.isNotBlank() && it != lastPartial) { lastPartial = it; lastVoice = System.currentTimeMillis(); l.onPartial(it) }
                     }
                 }
-                override fun onError(error: Int) { restart(250) }
+                override fun onError(error: Int) {
+                    if (!running) return
+                    when (error) {
+                        SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS -> { l.onStatus("Microphone permission not granted"); running = false }
+                        SpeechRecognizer.ERROR_NO_MATCH, SpeechRecognizer.ERROR_SPEECH_TIMEOUT -> { errors = 0; restart(150) }   // quiet room: normal
+                        SpeechRecognizer.ERROR_RECOGNIZER_BUSY, SpeechRecognizer.ERROR_CLIENT -> restart(800)
+                        else -> { errors++; l.onStatus("Recogniser error $error"); restart(minOf(8000L, 500L shl minOf(errors, 4))) }
+                    }
+                }
                 override fun onRmsChanged(rms: Float) {
                     l.onLevel(((rms + 2) / 12f).coerceIn(0f, 1f))
                     if (rms > 4f) lastVoice = System.currentTimeMillis()
                 }
-                override fun onReadyForSpeech(p: Bundle?) { l.onStatus("Listening (on-phone)") }
-                override fun onBeginningOfSpeech() {}
+                override fun onReadyForSpeech(p: Bundle?) { errors = 0; l.onStatus(if (segmented) "Listening (on-device, continuous)" else if (onDevice) "Listening (on-device)" else "Listening (on-phone)") }
+                override fun onBeginningOfSpeech() { lastVoice = System.currentTimeMillis() }
                 override fun onBufferReceived(b: ByteArray?) {}
                 override fun onEndOfSpeech() {}
                 override fun onEvent(t: Int, p: Bundle?) {}
             })
-            startListening(intent)
         }
+        listen()
     }.let { }
 
-    private fun restart(delay: Long) = main.postDelayed({ if (running) sr?.startListening(intent) }, delay)
+    private fun deliver(b: Bundle?) {
+        b?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull()?.let {
+            lastPartial = ""
+            if (it.isNotBlank()) { lastVoice = System.currentTimeMillis(); l.onFinal("?", it) }
+        }
+    }
 
-    override fun stop() = main.post { running = false; sr?.destroy(); sr = null }.let { }
+    /** Start (or restart) listening. In the non-segmented fallback the system chime is muted for the restart. */
+    private fun listen() {
+        val s = sr ?: return
+        if (!segmented) {
+            try { am.adjustStreamVolume(android.media.AudioManager.STREAM_SYSTEM, android.media.AudioManager.ADJUST_MUTE, 0) } catch (_: Exception) {}
+            try { am.adjustStreamVolume(android.media.AudioManager.STREAM_NOTIFICATION, android.media.AudioManager.ADJUST_MUTE, 0) } catch (_: Exception) {}
+        }
+        try { s.startListening(intent()) } catch (e: Exception) { l.onStatus("Recogniser failed: ${e.message?.take(60)}"); restart(2000) }
+    }
+
+    private fun restart(delay: Long) = main.postDelayed({ if (running) { try { sr?.cancel() } catch (_: Exception) {}; listen() } }, delay)
+
+    override fun stop() = main.post {
+        running = false
+        try { sr?.cancel(); sr?.destroy() } catch (_: Exception) {}
+        sr = null
+        try { am.adjustStreamVolume(android.media.AudioManager.STREAM_SYSTEM, android.media.AudioManager.ADJUST_UNMUTE, 0) } catch (_: Exception) {}
+        try { am.adjustStreamVolume(android.media.AudioManager.STREAM_NOTIFICATION, android.media.AudioManager.ADJUST_UNMUTE, 0) } catch (_: Exception) {}
+    }.let { }
 }
