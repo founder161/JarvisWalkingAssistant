@@ -10,6 +10,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
 import org.json.JSONObject
+import com.example.jarviswalkingassistant.core.JLog
 
 data class WatchState(
     val act: String = "", val label: String = "", val card: String = "", val say: String = "",
@@ -32,7 +33,8 @@ object WatchLink {
     private val scope = CoroutineScope(Dispatchers.IO)
 
     fun receive(ctx: Context, json: String) {
-        val j = try { JSONObject(json) } catch (e: Exception) { return }
+        val j = try { JSONObject(json) } catch (e: Exception) { JLog.d("link", "bad advice json"); return }
+        if (!phoneLive) JLog.d("link", "phone connected (first message)")
         phoneSeenAt = System.currentTimeMillis()
         state.value = WatchState(
             act = j.optString("act"), label = j.optString("label"), card = j.optString("card"),
@@ -61,7 +63,7 @@ object WatchLink {
 
     /** Keys and settings pushed from the phone: store on the watch so it can run alone. */
     fun receiveKeys(ctx: Context, json: String) {
-        val j = try { JSONObject(json) } catch (e: Exception) { return }
+        val j = try { JSONObject(json) } catch (e: Exception) { JLog.d("link", "bad keys json"); return }
         val p = WatchPrefs(ctx)
         j.optString("anthropic").takeIf { it.isNotBlank() }?.let { p.anthropicKey = it }
         j.optString("assembly").takeIf { it.isNotBlank() }?.let { p.assemblyKey = it }
@@ -70,6 +72,22 @@ object WatchLink {
         if (j.has("context")) p.context = j.optString("context")
         if (j.has("web")) p.web = j.optBoolean("web"); if (j.has("ipSafe")) p.ipSafe = j.optBoolean("ipSafe")
         local.value = local.value.copy(status = if (p.ready) "Keys received from phone ✓" else "Keys incomplete")
+        JLog.d("link", "keys from phone: claude=${if (p.ready) "ok" else "MISSING"} assembly=${if (p.assemblyKey.isNotBlank()) "ok" else "none"} venture=${p.venture}")
+    }
+
+    /** Send the watch's diagnostic log to the phone, which saves it to Downloads/JarvisNova. */
+    fun sendLog(ctx: Context, onResult: (String) -> Unit) {
+        val app = ctx.applicationContext
+        scope.launch {
+            try {
+                val nodes = Wearable.getNodeClient(app).connectedNodes.await()
+                if (nodes.isEmpty()) { onResult("Phone not connected"); return@launch }
+                val mc = Wearable.getMessageClient(app)
+                val body = JLog.dump().toByteArray()
+                nodes.forEach { mc.sendMessage(it.id, "/jarvis/log", body).await() }
+                onResult("Sent to phone (${body.size / 1024} KB)")
+            } catch (e: Exception) { onResult("Send failed: ${e.message?.take(60)}") }
+        }
     }
 
     fun cmd(ctx: Context, command: String) {
@@ -78,8 +96,9 @@ object WatchLink {
             try {
                 val nodes = Wearable.getNodeClient(app).connectedNodes.await()
                 val mc = Wearable.getMessageClient(app)
+                if (nodes.isEmpty()) JLog.d("link", "cmd '$command' — no phone connected")
                 nodes.forEach { mc.sendMessage(it.id, "/jarvis/cmd", command.toByteArray()).await() }
-            } catch (_: Exception) {}
+            } catch (e: Exception) { JLog.d("link", "cmd '$command' failed: $e") }
         }
     }
 }

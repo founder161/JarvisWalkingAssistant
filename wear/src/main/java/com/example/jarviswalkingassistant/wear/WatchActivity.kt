@@ -30,6 +30,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.wear.compose.material.Text
+import com.example.jarviswalkingassistant.core.JLog
 
 /**
  * The watch face of Jarvis. Shows the opener and the ONE line you're on (plus the next, small), so a glance is enough.
@@ -74,11 +75,17 @@ class WatchActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        JLog.install(this, "watch-ui")
+        JLog.d("ui", "opened; claudeKey=${if (WatchPrefs(this).ready) "yes" else "NO"}")
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         setContent {
+            var showLog by remember { mutableStateOf(false) }
+            var crash by remember { mutableStateOf(JLog.lastCrash(this@WatchActivity)) }
+            if (showLog) { LogScreen(onClose = { showLog = false }); return@setContent }
             val phoneState by WatchLink.state.collectAsState()
             val localState by WatchLink.local.collectAsState()
-            val s = if (WatchService.running || localState.local && !WatchLink.phoneLive) localState else phoneState
+            val svcRunning by WatchService.runningFlow.collectAsState()
+            val s = if (svcRunning || localState.local && !WatchLink.phoneLive) localState else phoneState
             val focus = remember { FocusRequester() }
             var acc by remember { mutableFloatStateOf(0f) }
             val col = color(s.label)
@@ -100,8 +107,13 @@ class WatchActivity : ComponentActivity() {
                         if (s.pending > 0) append(" · ${s.pending} waiting")
                     }, color = if (s.pending > 0) Color(0xFFF59E0B) else dim, fontSize = 10.sp)
                     Spacer(Modifier.height(6.dp))
+                    crash?.let { c ->
+                        Text("Jarvis crashed last time — tap to clear. Send the log to the phone from the Log page.", color = Color(0xFFEF4444), fontSize = 10.sp, textAlign = TextAlign.Center,
+                            modifier = Modifier.clickable { JLog.clearCrash(this@WatchActivity); crash = null })
+                        Spacer(Modifier.height(4.dp))
+                    }
                     when {
-                        !s.connected && !WatchService.running -> {
+                        !s.connected && !svcRunning -> {
                             Text(if (WatchPrefs(this@WatchActivity).ready) "Phone not here. Run Jarvis on the watch?" else "Open Jarvis on your phone once so the watch gets your keys.",
                                 color = Color.White, fontSize = 14.sp, textAlign = TextAlign.Center)
                             Spacer(Modifier.height(8.dp))
@@ -136,7 +148,7 @@ class WatchActivity : ComponentActivity() {
                     Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         Btn("Hush") { go("hush") }
                         Btn(if (s.solo) "Me ✓" else "Me", color = if (s.solo) Color(0xFF0E4F5A) else Color(0xFF181B26)) { go("solo") }
-                        if (WatchService.running) Btn("■", color = Color(0xFF7F1D1D)) { WatchService.send(this@WatchActivity, WatchService.STOP) }
+                        if (svcRunning) Btn("■", color = Color(0xFF7F1D1D)) { WatchService.send(this@WatchActivity, WatchService.STOP) }
                         else Btn(if (s.phase == "PAUSED") "▶" else "Ⅱ") { WatchLink.cmd(this@WatchActivity, "toggle_pause") }
                     }
                     Spacer(Modifier.height(6.dp))
@@ -151,13 +163,40 @@ class WatchActivity : ComponentActivity() {
                         Btn("Pin") { WatchLink.cmd(this@WatchActivity, "pin") }
                     }
                     Spacer(Modifier.height(6.dp))
-                    if (WatchService.running) Text("Running on the watch · ${s.status}", color = dim, fontSize = 10.sp, textAlign = TextAlign.Center)
+                    if (svcRunning) Text("Running on the watch · ${s.status}", color = dim, fontSize = 10.sp, textAlign = TextAlign.Center)
                     else { Btn("Private", wide = true) { WatchLink.cmd(this@WatchActivity, "private") }
                            if (WatchPrefs(this@WatchActivity).ready) { Spacer(Modifier.height(6.dp)); Btn("Watch only", wide = true) { startOnWatch() } } }
+                    Spacer(Modifier.height(6.dp))
+                    Btn("Log", wide = true) { showLog = true }
                     Spacer(Modifier.height(20.dp))
                 }
             }
             LaunchedEffect(Unit) { focus.requestFocus() }
+        }
+    }
+
+    /** The diagnostic log, on the wrist. "Send to phone" drops it in the phone's Downloads/JarvisNova folder. */
+    @Composable
+    private fun LogScreen(onClose: () -> Unit) {
+        val last by JLog.latest.collectAsState()
+        var result by remember { mutableStateOf("") }
+        val lines = remember(last) { JLog.recent(60).reversed() }
+        Box(Modifier.fillMaxSize().background(Color(0xFF06070B))) {
+            Column(Modifier.fillMaxSize().padding(horizontal = 16.dp, vertical = 14.dp).verticalScroll(rememberScrollState()),
+                horizontalAlignment = Alignment.CenterHorizontally) {
+                Text("LOG", color = Color(0xFF7C5CFF), fontSize = 11.sp, fontWeight = FontWeight.Black, letterSpacing = 1.sp)
+                Spacer(Modifier.height(6.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Btn("Back", wide = true) { onClose() }
+                    Btn("Send to phone", wide = true, color = Color(0xFF14532D)) { result = "Sending…"; WatchLink.sendLog(this@WatchActivity) { result = it } }
+                }
+                if (result.isNotBlank()) { Spacer(Modifier.height(4.dp)); Text(result, color = Color.White, fontSize = 10.sp, textAlign = TextAlign.Center) }
+                Spacer(Modifier.height(6.dp))
+                JLog.lastCrash(this@WatchActivity)?.let { Text(it.take(600), color = Color(0xFFEF4444), fontSize = 9.sp) ; Spacer(Modifier.height(6.dp)) }
+                if (lines.isEmpty()) Text("Nothing logged yet", color = Color(0xFF8A90A6), fontSize = 10.sp)
+                for (l in lines) Text(l.substringAfter(' '), color = if ("crash" in l || "failed" in l || "rejected" in l) Color(0xFFF59E0B) else Color(0xFFCBD0E0), fontSize = 9.sp, lineHeight = 11.sp)
+                Spacer(Modifier.height(20.dp))
+            }
         }
     }
 

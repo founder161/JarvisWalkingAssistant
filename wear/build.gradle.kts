@@ -21,8 +21,8 @@ android {
         applicationId = "com.example.jarviswalkingassistant"
         minSdk = 30
         targetSdk = 34
-        versionCode = 31
-        versionName = "3.1"
+        versionCode = 32
+        versionName = "3.2"
     }
     signingConfigs {
         create("jarvis") {

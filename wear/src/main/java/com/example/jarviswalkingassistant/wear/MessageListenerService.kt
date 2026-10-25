@@ -7,10 +7,12 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import androidx.core.app.NotificationCompat
+import com.example.jarviswalkingassistant.core.JLog
 import com.google.android.gms.wearable.MessageEvent
 import com.google.android.gms.wearable.WearableListenerService
 
 class MessageListenerService : WearableListenerService() {
+    override fun onCreate() { super.onCreate(); JLog.install(this, "watch-listener") }
     override fun onMessageReceived(e: MessageEvent) {
         if (e.path == "/jarvis/keys") { WatchLink.receiveKeys(this, String(e.data)); return }
         if (e.path != "/jarvis/advice") return

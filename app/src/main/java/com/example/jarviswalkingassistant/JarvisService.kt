@@ -105,9 +105,11 @@ class JarvisService : Service(), SttListener, TextToSpeech.OnInitListener {
 
     override fun onCreate() {
         super.onCreate()
+        com.example.jarviswalkingassistant.core.JLog.install(this, "phone-service")
         prefs = Prefs(this)
         gate = ClaimsGate(assets.open("facts_ledger.json").bufferedReader().readText())
         brain = Brain(gate, assets.open("brain_prompt.txt").bufferedReader().readText(), prefs)
+        brain.log = { com.example.jarviswalkingassistant.core.JLog.d("brain", it) }
         brain.wantFull = prefs.style == Style.FULL || prefs.ahead == Whisper.PHRASE || prefs.readFull
         tts = TextToSpeech(this, this)
         channels()
@@ -283,7 +285,7 @@ class JarvisService : Service(), SttListener, TextToSpeech.OnInitListener {
         if (follower != null && !speaking) feedFollower(text, partial = true)
     }
     override fun onLevel(level: Float) = JarvisState.set { it.copy(level = level) }
-    override fun onStatus(status: String) = JarvisState.set { it.copy(status = status) }
+    override fun onStatus(status: String) { com.example.jarviswalkingassistant.core.JLog.d("mic", status); JarvisState.set { it.copy(status = status) } }
 
     override fun onFinal(speaker: String, text: String) {
         val s = JarvisState.ui.value
@@ -337,7 +339,7 @@ class JarvisService : Service(), SttListener, TextToSpeech.OnInitListener {
                 if (line === pendingDirect) pendingDirect = null else pendingLine = null
                 setPhase(Phase.THINKING)
                 val advice = try { brain.think(JarvisState.ui.value.lines, line, prefs.venture) }
-                             catch (e: Exception) { JarvisState.set { it.copy(status = e.message?.take(80) ?: "Error") }; null }
+                             catch (e: Exception) { com.example.jarviswalkingassistant.core.JLog.d("brain", "error: $e"); JarvisState.set { it.copy(status = e.message?.take(80) ?: "Error") }; null }
                 if (advice != null) deliver(advice, asked = false)
                 if (!speaking) setPhase(Phase.LISTENING)
             }
@@ -393,7 +395,7 @@ class JarvisService : Service(), SttListener, TextToSpeech.OnInitListener {
                     follower?.let { f -> f.off = 0; val firstNew = Follower.unitsOf(a, prefs.style).size; f.jump(firstNew) }
                     if (prefs.ahead != Whisper.OFF) ahead.extend(updated, prefs.ahead)
                     refreshNotification(); pushWatch(1)
-                } catch (e: Exception) { JarvisState.set { it.copy(status = e.message?.take(80) ?: "Error") } }
+                } catch (e: Exception) { com.example.jarviswalkingassistant.core.JLog.d("brain", "error: $e"); JarvisState.set { it.copy(status = e.message?.take(80) ?: "Error") } }
             }
         }
     }

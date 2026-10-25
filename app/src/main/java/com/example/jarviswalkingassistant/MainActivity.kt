@@ -96,8 +96,9 @@ fun syncWatch(ctx: android.content.Context) {
             val app = ctx.applicationContext
             val nodes = com.google.android.gms.wearable.Wearable.getNodeClient(app).connectedNodes.await()
             val mc = com.google.android.gms.wearable.Wearable.getMessageClient(app)
+            com.example.jarviswalkingassistant.core.JLog.d("phone→watch", if (nodes.isEmpty()) "keys: no watch connected" else "keys sent to ${nodes.size} watch(es)")
             nodes.forEach { mc.sendMessage(it.id, "/jarvis/keys", j.toString().toByteArray()).await() }
-        } catch (_: Exception) {}
+        } catch (e: Exception) { com.example.jarviswalkingassistant.core.JLog.d("phone→watch", "keys failed: $e") }
     }
 }
 
@@ -108,6 +109,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        com.example.jarviswalkingassistant.core.JLog.install(this, "phone-ui")
         enableEdgeToEdge()
         val needed = buildList {
             add(Manifest.permission.RECORD_AUDIO)
@@ -545,6 +547,14 @@ private fun SetupScreen() {
             Text("Whisper-ahead puts the answer in your ear a phrase (or a cue) ahead of where you are, and waits if you pause. Phrase = the whole answer; Cue = just the first words of each point.", color = J.dim, fontSize = 12.sp)
             Text("Answers play as media audio to your Phonaks — never as a call, so your aids stay in normal hearing mode.",
                 color = J.dim, fontSize = 12.sp)
+        }
+        Group("Diagnostics") {
+            var saved by remember { mutableStateOf("") }
+            val crash = remember { com.example.jarviswalkingassistant.core.JLog.lastCrash(ctx) }
+            if (crash != null) Text("The app crashed last time:\n" + crash.take(400), color = J.blocked, fontSize = 12.sp)
+            Button(onClick = { saved = com.example.jarviswalkingassistant.core.JLog.saveToDownloads(ctx, "jarvis-phone-log-" + java.text.SimpleDateFormat("yyyyMMdd-HHmm", java.util.Locale.UK).format(java.util.Date()) + ".txt", com.example.jarviswalkingassistant.core.JLog.dump()) }) { Text("Save phone log to Downloads") }
+            if (saved.isNotBlank()) Text(saved, color = J.verified, fontSize = 12.sp)
+            Text("Watch log: open Jarvis on the watch → Log → Send to phone. It lands in Downloads/JarvisNova. Attach either file in the Claude chat and the problem can be read straight off it.", color = J.dim, fontSize = 12.sp)
         }
         Group("Facts") {
             val gate = remember { ClaimsGate(ctx.assets.open("facts_ledger.json").bufferedReader().readText()) }
