@@ -309,7 +309,11 @@ class JarvisService : Service(), SttListener, TextToSpeech.OnInitListener {
     override fun onStatus(status: String) { com.example.jarviswalkingassistant.core.JLog.d("mic", status); JarvisState.set { it.copy(status = status) } }
 
     override fun onFinal(speaker: String, text: String) {
-        if (isEcho(text)) { com.example.jarviswalkingassistant.core.JLog.d("mic", "ignored my own voice (${text.length} chars)"); return }
+        if (speaking) return
+        if (isEcho(text)) {
+            if (follower != null) { feedFollower(text, partial = false); return }   // me reading the answer back
+            com.example.jarviswalkingassistant.core.JLog.d("mic", "ignored my own voice (${text.length} chars)"); return
+        }
         com.example.jarviswalkingassistant.core.JLog.d("mic", "heard ${text.length} chars from $speaker")
         val s = JarvisState.ui.value
         var me = s.meSpeaker

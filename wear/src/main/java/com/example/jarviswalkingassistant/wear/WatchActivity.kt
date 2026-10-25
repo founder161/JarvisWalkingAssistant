@@ -134,7 +134,7 @@ class WatchActivity : ComponentActivity() {
                 }
 
                 // ---- not connected to anything
-                if (!s.connected && !svcRunning) {
+                if ((!s.connected || !WatchLink.phoneLive) && !svcRunning) {
                     item {
                         Text(if (ready) "Phone not here. Run Jarvis on the watch?" else "Open Jarvis on your phone once (Setup tab) so the watch gets your keys.",
                             color = Color.White, fontSize = 15.sp, textAlign = TextAlign.Center, modifier = Modifier.padding(vertical = 8.dp))
@@ -186,10 +186,11 @@ class WatchActivity : ComponentActivity() {
                 item { Big("View: " + when (s.style) { "FULL" -> "Full"; "BULLETS" -> "Bullets"; else -> "Say it" }, Color(0xFF181B26)) { go("style:next") } }
                 item { Big("Whisper-ahead: " + when (s.ahead) { "PHRASE" -> "Phrase"; "CUE" -> "Cue"; else -> "Off" }, Color(0xFF181B26)) { go("ahead:next") } }
                 if (!svcRunning) {
-                    item { Big(if (s.phase == "PAUSED") "▶ Resume" else "Ⅱ Pause", Color(0xFF181B26)) { WatchLink.cmd(this@WatchActivity, "toggle_pause") } }
+                    item { Text("Phone is doing the listening", color = dim, fontSize = 10.sp, textAlign = TextAlign.Center) }
+                    item { Big(if (s.phase == "PAUSED") "▶ Resume phone" else "Ⅱ Pause phone", Color(0xFF181B26)) { go("toggle_pause") } }
                     item { Big("Pin", Color(0xFF181B26)) { go("pin") } }
-                    item { Big("Private (mic off)", Color(0xFF181B26)) { WatchLink.cmd(this@WatchActivity, "private") } }
-                    if (ready) item { Big("Run on watch instead", Color(0xFF181B26)) { startOnWatch() } }
+                    item { Big("Private (mic off)", Color(0xFF181B26)) { go("private") } }
+                    if (ready) item { Big("▶ Run on watch instead", Color(0xFF14532D)) { startOnWatch() } }
                 } else {
                     item { Big("■  Stop watch mode", Color(0xFF7F1D1D)) { JLog.d("tap", "stop"); WatchService.send(this@WatchActivity, WatchService.STOP) } }
                     item { Text(s.status, color = dim, fontSize = 11.sp, textAlign = TextAlign.Center) }

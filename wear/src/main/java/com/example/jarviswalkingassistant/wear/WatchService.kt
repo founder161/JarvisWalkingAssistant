@@ -176,7 +176,7 @@ class WatchService : Service(), SttListener, TextToSpeech.OnInitListener, Engine
         releaseNetwork()
         try { if (wake?.isHeld == true) wake?.release() } catch (_: Exception) {}
         runningFlow.value = false
-        WatchLink.local.value = WatchLink.local.value.copy(running = false, status = "Stopped")
+        WatchLink.local.value = WatchState(status = "Stopped — tap Start on watch to go again", local = false)
         stopForeground(STOP_FOREGROUND_REMOVE)
         JLog.d("watch", "stopped")
     }

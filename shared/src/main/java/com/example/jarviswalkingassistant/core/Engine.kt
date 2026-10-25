@@ -146,7 +146,11 @@ class Engine(
 
     /** speaker: "ME", "?" (unknown) or a diarisation label. */
     fun onFinal(speaker: String, text: String) {
-        if (isEcho(text)) { set { copy(status = "Listening") }; return }   // my own voice coming back in
+        // ECHO vs DELIVERY: while the voice is actually playing, nothing heard counts. Just after it has spoken, or when
+        // the words match what it said, that's either an echo or Dale reading the answer back — if the prompter is armed
+        // it's his delivery (feed it), otherwise it's an echo (drop it).
+        if (host.speaking) return
+        if (isEcho(text)) { if (follower != null) feed(text, partial = false); return }
         val s = state
         val direct = Brain.DIRECT.containsMatchIn(text)
         val delivering = follower != null && (ahead.active || System.currentTimeMillis() - followArmedAt < 90_000)
